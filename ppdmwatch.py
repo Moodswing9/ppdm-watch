@@ -4,6 +4,9 @@ ppdmwatch — Real-time monitoring dashboard for Dell PowerProtect Data Manager.
 Equivalent to nsrwatch for NetWorker.
 """
 
+__version__ = "1.0.0"
+__author__ = "Timur Poyraz"
+
 from __future__ import annotations
 
 import argparse
@@ -353,9 +356,9 @@ class Dashboard:
         # ── Header ──
         conn = "CONNECTED" if self.state.connected else "DISCONNECTED"
         header = (
-            f" PPDM WATCH | {conn} | "
+            f" ppdmwatch v{__version__} | {conn} | "
             f"Health: {self.state.health_status} ({self.state.health_score}%) | "
-            f"Updated: {self.state.last_update} | Press q to quit "
+            f"Updated: {self.state.last_update} | q = quit "
         )
         self.screen.attron(curses.color_pair(6) | curses.A_BOLD)
         self.screen.addstr(0, 0, header[: w - 1])
@@ -503,7 +506,7 @@ class BackgroundDaemon:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="ppdmwatch — nsrwatch for Dell PowerProtect Data Manager",
+        description=f"ppdmwatch v{__version__} — nsrwatch for Dell PowerProtect Data Manager",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -525,6 +528,7 @@ Examples:
     p.add_argument("--daemon", "-d", action="store_true", help="Run as background daemon")
     p.add_argument("--log-dir", default="/var/log/ppdmwatch", help="Log directory (daemon mode)")
     p.add_argument("--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
 
