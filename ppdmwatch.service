@@ -1,0 +1,25 @@
+[Unit]
+Description=PPDM Watch Agent
+After=network.target
+
+[Service]
+Type=simple
+User=ppdmwatch
+Group=ppdmwatch
+WorkingDirectory=/opt/ppdmwatch
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/ppdmwatch/env
+ExecStart=/opt/ppdmwatch/venv/bin/python /opt/ppdmwatch/ppdmwatch.py \
+    --host ${PPDM_HOST} \
+    --username ${PPDM_USER} \
+    --password ${PPDM_PASS} \
+    --port ${PPDM_PORT:-8443} \
+    --daemon \
+    --log-dir /var/log/ppdmwatch \
+    --no-ssl-verify \
+    --poll 30
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
