@@ -188,6 +188,18 @@ nssm start ppdmwatch
 
 ---
 
+## More from Moodswing9
+
+| Repo | What it does |
+|:---|:---|
+| [networker-ppdm](https://github.com/Moodswing9/networker-ppdm) | Python REST API clients, unified `backupctl` CLI, and Claude Code skill for NetWorker, PPDM & Data Domain |
+| [ppdm-es-troubleshooter](https://github.com/Moodswing9/ppdm-es-troubleshooter) | Browser-based diagnostic dashboard for PPDM Elasticsearch errors — 10 modules, 7 guided workflows, AI Diagnose |
+| [claude-deck-generator](https://github.com/Moodswing9/claude-deck-generator) | AI presentation generator — prompt to `.pptx` / `.html` in seconds, powered by Claude AI |
+
+👉 Full portfolio: [moodswing9.github.io](https://moodswing9.github.io)
+
+---
+
 ## License
 
 Copyright (c) 2026 Timur Poyraz. All rights reserved.
@@ -198,6 +210,6 @@ No part of this software may be reproduced, distributed, or modified in any form
 
 <div align="center">
 
-Built by [Moodswing9](https://github.com/Moodswing9) · [Portfolio](https://moodswing9.github.io/Index/)
+Built by [Moodswing9](https://github.com/Moodswing9) · [Portfolio](https://moodswing9.github.io)
 
 </div>
