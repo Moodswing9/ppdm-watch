@@ -5,7 +5,7 @@
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
 [![Version](https://img.shields.io/badge/version-1.0.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
-[![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](#license)
+[![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-ef4444?style=flat-square)](#license)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
 [![Status](https://img.shields.io/badge/status-stable-22c55e?style=flat-square)](#)
@@ -190,7 +190,9 @@ nssm start ppdmwatch
 
 ## License
 
-MIT © 2026 Timur Poyraz
+Copyright (c) 2026 Timur Poyraz. All rights reserved.
+
+No part of this software may be reproduced, distributed, or modified in any form or by any means without express written permission from the copyright holder.
 
 ---
 
