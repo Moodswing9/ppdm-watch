@@ -4,7 +4,7 @@
 
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-ef4444?style=flat-square)](#license)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
@@ -40,6 +40,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 | 🔄 Auto-polling | Configurable interval (default 5 s TUI / 30 s daemon) |
 | 📁 Rotating logs | Up to 5 × 10 MB log files under a configurable log directory |
 | 🚨 Threshold alerts | Fires on critical alerts, failed jobs, and storage > 85 % |
+| 🤖 AI alert summaries | Optional Claude Haiku integration — one-sentence root cause + action on failures (5-min cooldown) |
 | 🐧 systemd-ready | Drop-in unit file + one-shot `install.sh` for Linux |
 | 🪟 Windows support | NSSM wrapper instructions included |
 
@@ -50,6 +51,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 - Python **3.8+**
 - Dell PPDM **19.10+** (REST API v2)
 - `requests`, `urllib3`
+- `anthropic` *(optional — enables AI alert summaries via `--ai-key`)*
 
 ```bash
 pip install -r requirements.txt
@@ -126,6 +128,7 @@ python ppdmwatch.py \
 | `--daemon` / `-d` | off | Run as background daemon instead of TUI |
 | `--log-dir` | `/var/log/ppdmwatch` | Log directory *(daemon mode)* |
 | `--no-ssl-verify` | off | Disable SSL certificate verification |
+| `--ai-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key for AI alert summaries (omit to disable) |
 
 ---
 
@@ -149,7 +152,7 @@ ppdm-watch/
 ├── ppdmwatch.py          # Main application — TUI, daemon, API client (~350 lines)
 ├── ppdmwatch.service     # systemd unit file for Linux deployments
 ├── install.sh            # One-shot Linux installer (venv, user, credentials, service)
-├── requirements.txt      # requests, urllib3
+├── requirements.txt      # requests, urllib3 (+ optional anthropic)
 └── .env.example          # Credential template
 ```
 

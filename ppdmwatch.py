@@ -4,7 +4,7 @@ ppdmwatch — Real-time monitoring dashboard for Dell PowerProtect Data Manager.
 Equivalent to nsrwatch for NetWorker.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Timur Poyraz"
 
 from __future__ import annotations
@@ -25,6 +25,12 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import requests
+
+try:
+    import anthropic as _anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_AVAILABLE = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -187,16 +193,63 @@ class DashboardState:
     last_update: str = ""
     connected: bool = False
     error: Optional[str] = None
+    ai_summary: Optional[str] = None
+
+
+# ─── AI Alert Summariser ──────────────────────────────────────────────────────
+
+class AISummarizer:
+    _COOLDOWN = 300  # seconds between Claude calls
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+        self._last_call: float = 0.0
+
+    def _should_call(self, state: DashboardState) -> bool:
+        if not _ANTHROPIC_AVAILABLE:
+            return False
+        if state.protection_jobs.failed == 0 and state.alerts_critical == 0:
+            return False
+        return (time.time() - self._last_call) >= self._COOLDOWN
+
+    def summarize(self, state: DashboardState) -> Optional[str]:
+        if not self._should_call(state):
+            return None
+        try:
+            client = _anthropic.Anthropic(api_key=self._api_key)
+            alert_lines = "\n".join(
+                f"- [{a.get('severity','?')}] {a.get('message','')}" for a in state.recent_alerts[:5]
+            )
+            prompt = (
+                f"PPDM health: {state.health_status} ({state.health_score}%)\n"
+                f"Failed protection jobs (24h): {state.protection_jobs.failed}\n"
+                f"Critical alerts: {state.alerts_critical}\n"
+                f"Recent alerts:\n{alert_lines}\n\n"
+                "In one sentence, state the most likely root cause and the single most important action to take."
+            )
+            msg = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=120,
+                system="You are a Dell PPDM expert. Be concise — one sentence only.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            self._last_call = time.time()
+            return msg.content[0].text.strip()
+        except Exception as e:
+            logging.warning(f"AI summarizer error: {e}")
+            return None
 
 
 # ─── Background Data Collector ────────────────────────────────────────────────
 
 class DataCollector(threading.Thread):
-    def __init__(self, client: PPDMClient, state: DashboardState, interval: int):
+    def __init__(self, client: PPDMClient, state: DashboardState, interval: int,
+                 ai_summarizer: Optional["AISummarizer"] = None):
         super().__init__(daemon=True)
         self.client = client
         self.state = state
         self.interval = interval
+        self._ai = ai_summarizer
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
 
@@ -279,9 +332,12 @@ class DataCollector(threading.Thread):
             msg = alert.get("message", "No message")
             messages.append(f"[{sev}] {msg[:80]}")
 
+        prot_summary = summarize(prot_jobs)
+        sys_summary  = summarize(sys_jobs)
+
         with self._lock:
-            self.state.protection_jobs = summarize(prot_jobs)
-            self.state.system_jobs = summarize(sys_jobs)
+            self.state.protection_jobs = prot_summary
+            self.state.system_jobs = sys_summary
             self.state.running_sessions = running
             self.state.storage_systems = storage
             self.state.health_score = health.get("score", 0)
@@ -294,6 +350,12 @@ class DataCollector(threading.Thread):
             self.state.last_update = now
             self.state.connected = True
             self.state.error = None
+
+        if self._ai:
+            ai_text = self._ai.summarize(self.state)
+            if ai_text:
+                with self._lock:
+                    self.state.ai_summary = f"[AI] {ai_text}"
 
 
 # ─── TUI Dashboard ────────────────────────────────────────────────────────────
@@ -435,8 +497,13 @@ class Dashboard:
         if msg_h > 2:
             msg_win = curses.newwin(msg_h, w, msg_y, 0)
             self._draw_box(msg_win, "Messages & Alerts")
-            for i, msg in enumerate(self.state.messages[: msg_h - 2]):
-                if msg.startswith("CRITICAL") or "[CRITICAL]" in msg:
+            display_msgs = list(self.state.messages)
+            if self.state.ai_summary:
+                display_msgs.insert(0, self.state.ai_summary)
+            for i, msg in enumerate(display_msgs[: msg_h - 2]):
+                if msg.startswith("[AI]"):
+                    color = curses.color_pair(6) | curses.A_BOLD
+                elif msg.startswith("CRITICAL") or "[CRITICAL]" in msg:
                     color = curses.color_pair(3) | curses.A_BOLD
                 elif "[WARNING]" in msg:
                     color = curses.color_pair(4)
@@ -527,6 +594,7 @@ Examples:
     p.add_argument("--poll", type=int, default=5, help="Polling interval in seconds (default: 5)")
     p.add_argument("--daemon", "-d", action="store_true", help="Run as background daemon")
     p.add_argument("--log-dir", default="/var/log/ppdmwatch", help="Log directory (daemon mode)")
+    p.add_argument("--ai-key", default=os.environ.get("ANTHROPIC_API_KEY"), help="Anthropic API key for AI alert summaries (or set ANTHROPIC_API_KEY)")
     p.add_argument("--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
@@ -544,6 +612,10 @@ def main() -> None:
     )
     client = PPDMClient(config)
 
+    ai_summarizer = AISummarizer(args.ai_key) if args.ai_key and _ANTHROPIC_AVAILABLE else None
+    if args.ai_key and not _ANTHROPIC_AVAILABLE:
+        print("Warning: anthropic package not installed — AI summaries disabled. Run: pip install anthropic", file=sys.stderr)
+
     if args.daemon:
         daemon = BackgroundDaemon(client, config, args.log_dir)
 
@@ -558,7 +630,7 @@ def main() -> None:
             print("Authentication failed. Check --host, --username, and --password.", file=sys.stderr)
             sys.exit(1)
         state = DashboardState()
-        collector = DataCollector(client, state, config.poll_interval)
+        collector = DataCollector(client, state, config.poll_interval, ai_summarizer=ai_summarizer)
         collector.start()
         dashboard = Dashboard(state)
         try:
