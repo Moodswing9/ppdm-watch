@@ -193,6 +193,7 @@ class DashboardState:
     last_update: str = ""
     connected: bool = False
     error: Optional[str] = None
+    protection_engines: List[Dict] = field(default_factory=list)
     ai_summary: Optional[str] = None
 
 
@@ -298,6 +299,7 @@ class DataCollector(threading.Thread):
         running = self.client.get_activities(running_filter, page_size=100)
 
         storage = self.client.get_storage_systems()
+        engines = self.client.get_protection_engines()
         health = self.client.get_system_health()
         critical_alerts = self.client.get_alerts("CRITICAL")
         warning_alerts = self.client.get_alerts("WARNING")
@@ -340,6 +342,7 @@ class DataCollector(threading.Thread):
             self.state.system_jobs = sys_summary
             self.state.running_sessions = running
             self.state.storage_systems = storage
+            self.state.protection_engines = engines
             self.state.health_score = health.get("score", 0)
             self.state.health_status = health.get("status", "Unknown")
             self.state.alerts_critical = len(critical_alerts)
@@ -475,7 +478,8 @@ class Dashboard:
 
         # Panel 3: Running / Queued Sessions (middle, full width)
         sess_y = 2 + sum_h
-        sess_h = min(10, h - sess_y - 8)
+        eng_h = min(max(len(self.state.protection_engines) + 3, 4), 8)
+        sess_h = min(8, h - sess_y - eng_h - 4)
         sess_h = max(sess_h, 4)
         sess_win = curses.newwin(sess_h, w, sess_y, 0)
         self._draw_box(sess_win, f"Running / Queued Sessions ({len(self.state.running_sessions)})")
@@ -491,8 +495,23 @@ class Dashboard:
             sess_win.addstr(i + 2, 2, self._truncate(line, w - 4), self._color_for_status(status))
         sess_win.refresh()
 
-        # Panel 4: Messages & Alerts (bottom)
-        msg_y = sess_y + sess_h
+        # Panel 4: Protection Engines
+        eng_y = sess_y + sess_h
+        eng_win = curses.newwin(eng_h, w, eng_y, 0)
+        self._draw_box(eng_win, f"Protection Engines ({len(self.state.protection_engines)})")
+        hdr = f" {'Name':<30} {'Type':<20} {'State':<15} {'Address':<25}"
+        eng_win.addstr(1, 2, hdr[: w - 4], curses.A_BOLD | curses.color_pair(6))
+        for i, eng in enumerate(self.state.protection_engines[: eng_h - 3]):
+            name = eng.get("name", "N/A")[:29]
+            etype = eng.get("type", "N/A")[:19]
+            estate = eng.get("state", eng.get("status", "N/A"))[:14]
+            addr = eng.get("address", eng.get("hostname", "N/A"))[:24]
+            line = f" {name:<30} {etype:<20} {estate:<15} {addr:<25}"
+            eng_win.addstr(i + 2, 2, self._truncate(line, w - 4), self._color_for_status(estate))
+        eng_win.refresh()
+
+        # Panel 5: Messages & Alerts (bottom)
+        msg_y = eng_y + eng_h
         msg_h = h - msg_y
         if msg_h > 2:
             msg_win = curses.newwin(msg_h, w, msg_y, 0)
@@ -518,12 +537,14 @@ class Dashboard:
 # ─── Background Daemon ────────────────────────────────────────────────────────
 
 class BackgroundDaemon:
-    def __init__(self, client: PPDMClient, config: PPDMConfig, log_dir: str):
+    def __init__(self, client: PPDMClient, config: PPDMConfig, log_dir: str,
+                 ai_summarizer: Optional["AISummarizer"] = None):
         self.client = client
         self.config = config
         self.log_dir = log_dir
         self.state = DashboardState()
-        self.collector = DataCollector(client, self.state, config.poll_interval)
+        self.collector = DataCollector(client, self.state, config.poll_interval,
+                                       ai_summarizer=ai_summarizer)
         self.logger = self._setup_logging()
         self._stop_event = threading.Event()
 
@@ -552,6 +573,9 @@ class BackgroundDaemon:
                 self.logger.warning(
                     f"Storage {stor.get('name')} at {used / total * 100:.1f}% capacity"
                 )
+        if self.state.ai_summary:
+            self.logger.info(self.state.ai_summary)
+            self.state.ai_summary = None
 
     def run(self) -> None:
         self.logger.info("PPDM Watch Agent starting...")
@@ -617,7 +641,7 @@ def main() -> None:
         print("Warning: anthropic package not installed — AI summaries disabled. Run: pip install anthropic", file=sys.stderr)
 
     if args.daemon:
-        daemon = BackgroundDaemon(client, config, args.log_dir)
+        daemon = BackgroundDaemon(client, config, args.log_dir, ai_summarizer=ai_summarizer)
 
         def _signal_handler(sig, frame):
             daemon.stop()
