@@ -4,7 +4,7 @@
 
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
-[![Version](https://img.shields.io/badge/version-1.1.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-ef4444?style=flat-square)](#license)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
@@ -41,6 +41,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 | 📁 Rotating logs | Up to 5 × 10 MB log files under a configurable log directory |
 | 🚨 Threshold alerts | Fires on critical alerts, failed jobs, and storage > 85 % |
 | 🤖 AI alert summaries | Optional Claude Haiku integration — one-sentence root cause + action on failures (5-min cooldown) |
+| 🏥 Health endpoint | `GET /health` HTTP endpoint (default port 8080) returns JSON status — HTTP 200 when connected, 503 when not. Designed for `systemd` `ExecStartPost` health checks and NSSM monitors |
 | 🐧 systemd-ready | Drop-in unit file + one-shot `install.sh` for Linux |
 | 🪟 Windows support | NSSM wrapper instructions included |
 
@@ -129,6 +130,7 @@ python ppdmwatch.py \
 | `--log-dir` | `/var/log/ppdmwatch` | Log directory *(daemon mode)* |
 | `--no-ssl-verify` | off | Disable SSL certificate verification |
 | `--ai-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key for AI alert summaries (omit to disable) |
+| `--health-port` | `8080` | Port for `GET /health` HTTP endpoint *(daemon mode only)* |
 
 ---
 
