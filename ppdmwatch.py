@@ -10,7 +10,10 @@ __author__ = "Timur Poyraz"
 from __future__ import annotations
 
 import argparse
+import copy
 import curses
+import http.server
+import json
 import logging
 import logging.handlers
 import os
@@ -177,6 +180,7 @@ class JobSummary:
 
 @dataclass
 class DashboardState:
+    lock: threading.Lock = field(default_factory=threading.Lock, compare=False, repr=False)
     server_uptime: str = "Unknown"
     ppdm_version: str = "Unknown"
     health_score: int = 0
@@ -252,7 +256,6 @@ class DataCollector(threading.Thread):
         self.interval = interval
         self._ai = ai_summarizer
         self._stop_event = threading.Event()
-        self._lock = threading.Lock()
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -262,7 +265,7 @@ class DataCollector(threading.Thread):
             try:
                 self._collect()
             except Exception as e:
-                with self._lock:
+                with self.state.lock:
                     self.state.error = str(e)
                     self.state.connected = False
             self._stop_event.wait(self.interval)
@@ -337,7 +340,7 @@ class DataCollector(threading.Thread):
         prot_summary = summarize(prot_jobs)
         sys_summary  = summarize(sys_jobs)
 
-        with self._lock:
+        with self.state.lock:
             self.state.protection_jobs = prot_summary
             self.state.system_jobs = sys_summary
             self.state.running_sessions = running
@@ -357,7 +360,7 @@ class DataCollector(threading.Thread):
         if self._ai:
             ai_text = self._ai.summarize(self.state)
             if ai_text:
-                with self._lock:
+                with self.state.lock:
                     self.state.ai_summary = f"[AI] {ai_text}"
 
 
@@ -410,6 +413,8 @@ class Dashboard:
             time.sleep(1)
 
     def _render(self) -> None:
+        with self.state.lock:
+            state = copy.copy(self.state)
         self.screen.clear()
         h, w = self.screen.getmaxyx()
 
@@ -419,20 +424,20 @@ class Dashboard:
             return
 
         # ── Header ──
-        conn = "CONNECTED" if self.state.connected else "DISCONNECTED"
+        conn = "CONNECTED" if state.connected else "DISCONNECTED"
         header = (
             f" ppdmwatch v{__version__} | {conn} | "
-            f"Health: {self.state.health_status} ({self.state.health_score}%) | "
-            f"Updated: {self.state.last_update} | q = quit "
+            f"Health: {state.health_status} ({state.health_score}%) | "
+            f"Updated: {state.last_update} | q = quit "
         )
         self.screen.attron(curses.color_pair(6) | curses.A_BOLD)
         self.screen.addstr(0, 0, header[: w - 1])
         self.screen.attroff(curses.color_pair(6) | curses.A_BOLD)
         self.screen.hline(1, 0, curses.ACS_HLINE, w)
 
-        if self.state.error:
+        if state.error:
             self.screen.attron(curses.color_pair(3) | curses.A_BOLD)
-            self.screen.addstr(1, 0, f" ERROR: {self.state.error}"[: w - 1])
+            self.screen.addstr(1, 0, f" ERROR: {state.error}"[: w - 1])
             self.screen.attroff(curses.color_pair(3) | curses.A_BOLD)
 
         # ── Layout ──
@@ -443,8 +448,8 @@ class Dashboard:
         sum_h = 8
         sum_win = curses.newwin(sum_h, left_w, 2, 0)
         self._draw_box(sum_win, "Server Summary")
-        pj = self.state.protection_jobs
-        sj = self.state.system_jobs
+        pj = state.protection_jobs
+        sj = state.system_jobs
         lines = [
             f"Protection Jobs (24h): Total:{pj.total:>4}  Run:{pj.running:>3}  OK:{pj.success:>4}  "
             f"Fail:{pj.failed:>3}  Canceled:{pj.canceled:>3}",
@@ -452,8 +457,8 @@ class Dashboard:
             f"Fail:{sj.failed:>3}  Canceled:{sj.canceled:>3}",
             f"Queued: {pj.queued + sj.queued}  |  OK w/ Errors: {pj.ok_with_errors + sj.ok_with_errors}",
             "",
-            f"Critical Alerts: {self.state.alerts_critical}  |  Warnings: {self.state.alerts_warning}  "
-            f"|  Info: {self.state.alerts_info}",
+            f"Critical Alerts: {state.alerts_critical}  |  Warnings: {state.alerts_warning}  "
+            f"|  Info: {state.alerts_info}",
         ]
         for i, line in enumerate(lines[: sum_h - 2]):
             color = curses.color_pair(3) if ("Fail" in line and pj.failed > 0) else curses.color_pair(1)
@@ -463,9 +468,9 @@ class Dashboard:
         # Panel 2: Storage Systems (top-right)
         stor_win = curses.newwin(sum_h, right_w, 2, left_w)
         self._draw_box(stor_win, "Storage Systems")
-        if not self.state.storage_systems:
+        if not state.storage_systems:
             stor_win.addstr(1, 2, "No storage systems found.", curses.color_pair(4))
-        for i, stor in enumerate(self.state.storage_systems[: sum_h - 3]):
+        for i, stor in enumerate(state.storage_systems[: sum_h - 3]):
             name = stor.get("name", "Unknown")
             status = stor.get("status", "Unknown")
             cap = stor.get("capacity", {})
@@ -478,14 +483,14 @@ class Dashboard:
 
         # Panel 3: Running / Queued Sessions (middle, full width)
         sess_y = 2 + sum_h
-        eng_h = min(max(len(self.state.protection_engines) + 3, 4), 8)
+        eng_h = min(max(len(state.protection_engines) + 3, 4), 8)
         sess_h = min(8, h - sess_y - eng_h - 4)
         sess_h = max(sess_h, 4)
         sess_win = curses.newwin(sess_h, w, sess_y, 0)
-        self._draw_box(sess_win, f"Running / Queued Sessions ({len(self.state.running_sessions)})")
+        self._draw_box(sess_win, f"Running / Queued Sessions ({len(state.running_sessions)})")
         hdr = f" {'Activity ID':<38} {'Type':<15} {'Status':<12} {'Asset':<25} {'Progress':<10}"
         sess_win.addstr(1, 2, hdr[: w - 4], curses.A_BOLD | curses.color_pair(6))
-        for i, job in enumerate(self.state.running_sessions[: sess_h - 4]):
+        for i, job in enumerate(state.running_sessions[: sess_h - 4]):
             jid = job.get("id", "N/A")[:36]
             jtype = job.get("category", "N/A")[:14]
             status = job.get("result", {}).get("status", "N/A")[:11]
@@ -498,10 +503,10 @@ class Dashboard:
         # Panel 4: Protection Engines
         eng_y = sess_y + sess_h
         eng_win = curses.newwin(eng_h, w, eng_y, 0)
-        self._draw_box(eng_win, f"Protection Engines ({len(self.state.protection_engines)})")
+        self._draw_box(eng_win, f"Protection Engines ({len(state.protection_engines)})")
         hdr = f" {'Name':<30} {'Type':<20} {'State':<15} {'Address':<25}"
         eng_win.addstr(1, 2, hdr[: w - 4], curses.A_BOLD | curses.color_pair(6))
-        for i, eng in enumerate(self.state.protection_engines[: eng_h - 3]):
+        for i, eng in enumerate(state.protection_engines[: eng_h - 3]):
             name = eng.get("name", "N/A")[:29]
             etype = eng.get("type", "N/A")[:19]
             estate = eng.get("state", eng.get("status", "N/A"))[:14]
@@ -516,9 +521,9 @@ class Dashboard:
         if msg_h > 2:
             msg_win = curses.newwin(msg_h, w, msg_y, 0)
             self._draw_box(msg_win, "Messages & Alerts")
-            display_msgs = list(self.state.messages)
-            if self.state.ai_summary:
-                display_msgs.insert(0, self.state.ai_summary)
+            display_msgs = list(state.messages)
+            if state.ai_summary:
+                display_msgs.insert(0, state.ai_summary)
             for i, msg in enumerate(display_msgs[: msg_h - 2]):
                 if msg.startswith("[AI]"):
                     color = curses.color_pair(6) | curses.A_BOLD
@@ -534,17 +539,61 @@ class Dashboard:
         self.screen.refresh()
 
 
+# ─── Health HTTP Server ───────────────────────────────────────────────────────
+
+class HealthServer(threading.Thread):
+    """Minimal HTTP server exposing GET /health for systemd/NSSM liveness probes."""
+
+    def __init__(self, state: DashboardState, port: int = 8080) -> None:
+        super().__init__(daemon=True)
+        self._state = state
+        self._port = port
+
+    def run(self) -> None:
+        state = self._state
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path != "/health":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                with state.lock:
+                    body = json.dumps({
+                        "connected":              state.connected,
+                        "health_status":          state.health_status,
+                        "health_score":           state.health_score,
+                        "alerts_critical":        state.alerts_critical,
+                        "protection_jobs_failed": state.protection_jobs.failed,
+                        "last_update":            state.last_update,
+                    }).encode()
+                    code = 200 if state.connected else 503
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args) -> None:
+                pass  # silence access logs
+
+        with http.server.HTTPServer(("", self._port), _Handler) as httpd:
+            httpd.serve_forever()
+
+
 # ─── Background Daemon ────────────────────────────────────────────────────────
 
 class BackgroundDaemon:
     def __init__(self, client: PPDMClient, config: PPDMConfig, log_dir: str,
-                 ai_summarizer: Optional["AISummarizer"] = None):
+                 ai_summarizer: Optional["AISummarizer"] = None,
+                 health_port: int = 8080):
         self.client = client
         self.config = config
         self.log_dir = log_dir
         self.state = DashboardState()
         self.collector = DataCollector(client, self.state, config.poll_interval,
                                        ai_summarizer=ai_summarizer)
+        self.health_server = HealthServer(self.state, port=health_port)
         self.logger = self._setup_logging()
         self._stop_event = threading.Event()
 
@@ -581,6 +630,8 @@ class BackgroundDaemon:
         self.logger.info("PPDM Watch Agent starting...")
         if not self.client.login():
             self.logger.error("Initial login failed — retrying in background.")
+        self.health_server.start()
+        self.logger.info(f"Health endpoint: http://0.0.0.0:{self.health_server._port}/health")
         self.collector.start()
         while not self._stop_event.is_set():
             self._check_thresholds()
@@ -620,6 +671,7 @@ Examples:
     p.add_argument("--log-dir", default="/var/log/ppdmwatch", help="Log directory (daemon mode)")
     p.add_argument("--ai-key", default=os.environ.get("ANTHROPIC_API_KEY"), help="Anthropic API key for AI alert summaries (or set ANTHROPIC_API_KEY)")
     p.add_argument("--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
+    p.add_argument("--health-port", type=int, default=8080, help="Port for /health HTTP endpoint in daemon mode (default: 8080)")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
@@ -641,7 +693,8 @@ def main() -> None:
         print("Warning: anthropic package not installed — AI summaries disabled. Run: pip install anthropic", file=sys.stderr)
 
     if args.daemon:
-        daemon = BackgroundDaemon(client, config, args.log_dir, ai_summarizer=ai_summarizer)
+        daemon = BackgroundDaemon(client, config, args.log_dir, ai_summarizer=ai_summarizer,
+                                  health_port=args.health_port)
 
         def _signal_handler(sig, frame):
             daemon.stop()
