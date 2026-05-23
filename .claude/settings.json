@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -m py_compile ppdmwatch.py",
+            "timeout": 10,
+            "statusMessage": "Checking ppdmwatch.py syntax..."
+          },
+          {
+            "type": "command",
+            "command": "python -m pytest tests/test_core.py -q --tb=short",
+            "timeout": 30,
+            "statusMessage": "Running 15-test suite..."
+          }
+        ]
+      }
+    ]
+  }
+}

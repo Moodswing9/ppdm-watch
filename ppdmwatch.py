@@ -4,10 +4,10 @@ ppdmwatch — Real-time monitoring dashboard for Dell PowerProtect Data Manager.
 Equivalent to nsrwatch for NetWorker.
 """
 
-__version__ = "1.2.0"
-__author__ = "Timur Poyraz"
-
 from __future__ import annotations
+
+__version__ = "1.3.0"
+__author__ = "Timur Poyraz"
 
 import argparse
 import copy
@@ -22,9 +22,10 @@ import sys
 import threading
 import time
 import urllib3
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -90,8 +91,14 @@ class PPDMClient:
             return False
 
     def _ensure_auth(self) -> None:
-        if not self.token or datetime.now(timezone.utc).timestamp() > self.token_expiry - 300:
-            self.login()
+        if self.token and datetime.now(timezone.utc).timestamp() <= self.token_expiry - 300:
+            return
+        for attempt in range(3):
+            if self.login():
+                return
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+        logging.warning("Authentication failed after 3 attempts — next poll will retry")
 
     def get_activities(self, filters: str = "", page_size: int = 100) -> List[Dict]:
         self._ensure_auth()
@@ -199,6 +206,44 @@ class DashboardState:
     error: Optional[str] = None
     protection_engines: List[Dict] = field(default_factory=list)
     ai_summary: Optional[str] = None
+    failed_jobs_history: Deque[int] = field(default_factory=lambda: deque(maxlen=6))
+    storage_pct_history: Deque[float] = field(default_factory=lambda: deque(maxlen=6))
+
+
+# ─── Pure helper functions ────────────────────────────────────────────────────
+
+def build_job_summary(jobs: List[Dict]) -> "JobSummary":
+    """Tally PPDM activity records into a JobSummary. Pure function — no side effects."""
+    s = JobSummary(total=len(jobs))
+    for j in jobs:
+        status = j.get("result", {}).get("status", "UNKNOWN")
+        if status == "RUNNING":
+            s.running += 1
+        elif status == "QUEUED":
+            s.queued += 1
+        elif status == "OK":
+            s.success += 1
+        elif status == "FAILED":
+            s.failed += 1
+        elif status == "CANCELED":
+            s.canceled += 1
+        elif status == "OK_WITH_ERRORS":
+            s.ok_with_errors += 1
+        else:
+            s.unknown += 1
+    return s
+
+
+def build_messages(critical_alerts: List[Dict], all_alerts: List[Dict]) -> List[str]:
+    """Build the messages list from alert collections. Pure function — no side effects."""
+    msgs: List[str] = []
+    if critical_alerts:
+        msgs.append(f"CRITICAL: {len(critical_alerts)} critical alert(s) active!")
+    for alert in all_alerts[:5]:
+        sev = alert.get("severity", "INFO")
+        msg = alert.get("message", "No message")
+        msgs.append(f"[{sev}] {msg[:80]}")
+    return msgs
 
 
 # ─── AI Alert Summariser ──────────────────────────────────────────────────────
@@ -214,8 +259,20 @@ class AISummarizer:
         if not _ANTHROPIC_AVAILABLE:
             return False
         if state.protection_jobs.failed == 0 and state.alerts_critical == 0:
-            return False
+            if not self._should_predict(state):
+                return False
         return (time.time() - self._last_call) >= self._COOLDOWN
+
+    @staticmethod
+    def _should_predict(state: DashboardState) -> bool:
+        """Return True when failed jobs or storage % have increased 3 polls in a row."""
+        fh = list(state.failed_jobs_history)
+        if len(fh) >= 3 and fh[-1] > fh[-2] > fh[-3]:
+            return True
+        sh = list(state.storage_pct_history)
+        if len(sh) >= 3 and sh[-1] > sh[-2] > sh[-3]:
+            return True
+        return False
 
     def summarize(self, state: DashboardState) -> Optional[str]:
         if not self._should_call(state):
@@ -225,17 +282,42 @@ class AISummarizer:
             alert_lines = "\n".join(
                 f"- [{a.get('severity','?')}] {a.get('message','')}" for a in state.recent_alerts[:5]
             )
-            prompt = (
-                f"PPDM health: {state.health_status} ({state.health_score}%)\n"
-                f"Failed protection jobs (24h): {state.protection_jobs.failed}\n"
-                f"Critical alerts: {state.alerts_critical}\n"
-                f"Recent alerts:\n{alert_lines}\n\n"
-                "In one sentence, state the most likely root cause and the single most important action to take."
-            )
+
+            if self._should_predict(state):
+                fh = list(state.failed_jobs_history)
+                sh = list(state.storage_pct_history)
+                trend_parts: List[str] = []
+                if len(fh) >= 3 and fh[-1] > fh[-2] > fh[-3]:
+                    trend_parts.append(f"failed jobs: {fh[-3]} → {fh[-2]} → {fh[-1]}")
+                if len(sh) >= 3 and sh[-1] > sh[-2] > sh[-3]:
+                    trend_parts.append(
+                        f"max storage %: {sh[-3]:.1f}% → {sh[-2]:.1f}% → {sh[-1]:.1f}%"
+                    )
+                prompt = (
+                    f"PPDM health: {state.health_status} ({state.health_score}%)\n"
+                    f"These metrics are rising each poll interval: {'; '.join(trend_parts)}.\n"
+                    f"Current failed jobs (24h): {state.protection_jobs.failed}\n"
+                    f"Critical alerts: {state.alerts_critical}\n\n"
+                    "Based on these rising trends, predict what is most likely to fail next "
+                    "and state the single most important thing to check first."
+                )
+                system = "You are a Dell PPDM expert. Be concise — one sentence only."
+                max_tokens = 140
+            else:
+                prompt = (
+                    f"PPDM health: {state.health_status} ({state.health_score}%)\n"
+                    f"Failed protection jobs (24h): {state.protection_jobs.failed}\n"
+                    f"Critical alerts: {state.alerts_critical}\n"
+                    f"Recent alerts:\n{alert_lines}\n\n"
+                    "In one sentence, state the most likely root cause and the single most important action to take."
+                )
+                system = "You are a Dell PPDM expert. Be concise — one sentence only."
+                max_tokens = 120
+
             msg = client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=120,
-                system="You are a Dell PPDM expert. Be concise — one sentence only.",
+                max_tokens=max_tokens,
+                system=system,
                 messages=[{"role": "user", "content": prompt}],
             )
             self._last_call = time.time()
@@ -309,36 +391,17 @@ class DataCollector(threading.Thread):
         info_alerts = self.client.get_alerts("INFORMATIONAL")
         all_alerts = self.client.get_alerts()
 
-        def summarize(jobs: List[Dict]) -> JobSummary:
-            s = JobSummary(total=len(jobs))
-            for j in jobs:
-                status = j.get("result", {}).get("status", "UNKNOWN")
-                if status == "RUNNING":
-                    s.running += 1
-                elif status == "QUEUED":
-                    s.queued += 1
-                elif status == "OK":
-                    s.success += 1
-                elif status == "FAILED":
-                    s.failed += 1
-                elif status == "CANCELED":
-                    s.canceled += 1
-                elif status == "OK_WITH_ERRORS":
-                    s.ok_with_errors += 1
-                else:
-                    s.unknown += 1
-            return s
+        prot_summary = build_job_summary(prot_jobs)
+        sys_summary  = build_job_summary(sys_jobs)
+        messages     = build_messages(critical_alerts, all_alerts)
 
-        messages: List[str] = []
-        if len(critical_alerts) > 0:
-            messages.append(f"CRITICAL: {len(critical_alerts)} critical alert(s) active!")
-        for alert in all_alerts[:5]:
-            sev = alert.get("severity", "INFO")
-            msg = alert.get("message", "No message")
-            messages.append(f"[{sev}] {msg[:80]}")
-
-        prot_summary = summarize(prot_jobs)
-        sys_summary  = summarize(sys_jobs)
+        max_storage_pct = 0.0
+        for stor in storage:
+            cap = stor.get("capacity", {})
+            used = cap.get("used", 0)
+            total = cap.get("total", 1)
+            pct = (used / total * 100) if total > 0 else 0.0
+            max_storage_pct = max(max_storage_pct, pct)
 
         with self.state.lock:
             self.state.protection_jobs = prot_summary
@@ -356,6 +419,8 @@ class DataCollector(threading.Thread):
             self.state.last_update = now
             self.state.connected = True
             self.state.error = None
+            self.state.failed_jobs_history.append(prot_summary.failed)
+            self.state.storage_pct_history.append(max_storage_pct)
 
         if self._ai:
             ai_text = self._ai.summarize(self.state)
@@ -544,13 +609,15 @@ class Dashboard:
 class HealthServer(threading.Thread):
     """Minimal HTTP server exposing GET /health for systemd/NSSM liveness probes."""
 
-    def __init__(self, state: DashboardState, port: int = 8080) -> None:
+    def __init__(self, state: DashboardState, host: str = "", port: int = 8080) -> None:
         super().__init__(daemon=True)
         self._state = state
-        self._port = port
+        self._host  = host
+        self._port  = port
 
     def run(self) -> None:
         state = self._state
+        host  = self._host
 
         class _Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
@@ -559,13 +626,23 @@ class HealthServer(threading.Thread):
                     self.end_headers()
                     return
                 with state.lock:
+                    max_storage_pct = round(max(
+                        (
+                            (s.get("capacity", {}).get("used", 0) /
+                             max(s.get("capacity", {}).get("total", 1), 1) * 100)
+                            for s in state.storage_systems
+                        ),
+                        default=0.0,
+                    ), 1)
                     body = json.dumps({
-                        "connected":              state.connected,
-                        "health_status":          state.health_status,
-                        "health_score":           state.health_score,
-                        "alerts_critical":        state.alerts_critical,
-                        "protection_jobs_failed": state.protection_jobs.failed,
-                        "last_update":            state.last_update,
+                        "status":          "connected" if state.connected else "disconnected",
+                        "host":            host,
+                        "last_poll":       state.last_update,
+                        "health_score":    state.health_score,
+                        "health_status":   state.health_status,
+                        "failed_jobs":     state.protection_jobs.failed,
+                        "critical_alerts": state.alerts_critical,
+                        "max_storage_pct": max_storage_pct,
                     }).encode()
                     code = 200 if state.connected else 503
                 self.send_response(code)
@@ -593,7 +670,7 @@ class BackgroundDaemon:
         self.state = DashboardState()
         self.collector = DataCollector(client, self.state, config.poll_interval,
                                        ai_summarizer=ai_summarizer)
-        self.health_server = HealthServer(self.state, port=health_port)
+        self.health_server = HealthServer(self.state, host=config.host, port=health_port)
         self.logger = self._setup_logging()
         self._stop_event = threading.Event()
 

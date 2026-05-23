@@ -4,7 +4,7 @@
 
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
-[![Version](https://img.shields.io/badge/version-1.2.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-ef4444?style=flat-square)](#license)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
@@ -40,7 +40,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 | 🔄 Auto-polling | Configurable interval (default 5 s TUI / 30 s daemon) |
 | 📁 Rotating logs | Up to 5 × 10 MB log files under a configurable log directory |
 | 🚨 Threshold alerts | Fires on critical alerts, failed jobs, and storage > 85 % |
-| 🤖 AI alert summaries | Optional Claude Haiku integration — one-sentence root cause + action on failures (5-min cooldown) |
+| 🤖 AI alert summaries | Claude Haiku integration — root cause + action on failures (5-min cooldown). Predictive mode fires when failed jobs or max storage % climb 3 consecutive polls, asking Claude to predict what breaks next |
 | 🏥 Health endpoint | `GET /health` HTTP endpoint (default port 8080) returns JSON status — HTTP 200 when connected, 503 when not. Designed for `systemd` `ExecStartPost` health checks and NSSM monitors |
 | 🐧 systemd-ready | Drop-in unit file + one-shot `install.sh` for Linux |
 | 🪟 Windows support | NSSM wrapper instructions included |
@@ -151,7 +151,9 @@ python ppdmwatch.py \
 
 ```
 ppdm-watch/
-├── ppdmwatch.py          # Main application — TUI, daemon, API client (~350 lines)
+├── ppdmwatch.py          # Main application — TUI, daemon, API client
+├── tests/
+│   └── test_core.py      # Pytest suite — 15 unit tests for core logic
 ├── ppdmwatch.service     # systemd unit file for Linux deployments
 ├── install.sh            # One-shot Linux installer (venv, user, credentials, service)
 ├── requirements.txt      # requests, urllib3 (+ optional anthropic)
@@ -190,6 +192,26 @@ nssm install ppdmwatch python `
 
 nssm start ppdmwatch
 ```
+
+---
+
+## Claude Code Plugin
+
+Install as a Claude Code plugin to get `/ppdm-status` directly in your terminal:
+
+```bash
+npx skills add Moodswing9/ppdm-watch -g
+```
+
+This registers the skill and command globally so you can run `/ppdm-status` from any Claude Code session.
+
+| Command | What it does |
+|:---|:---|
+| `/ppdm-status` | AI briefing from daemon logs — Status · Current State · Active Issues · Trend · Next Action |
+| `/ppdm-status --log-dir /opt/ppdmwatch/logs --lines 500` | Read from a custom log directory |
+| `/ppdm-status --health-port 9090` | Poll the live `/health` endpoint on a non-default port |
+
+The skill auto-activates in Claude Code when you ask about PPDM job failures, daemon alerting, curses TUI layout, predictive trend logic, or threshold configuration — no command needed. Requires `ANTHROPIC_API_KEY` and `pip install anthropic`.
 
 ---
 

@@ -38,9 +38,9 @@ Everything lives in `ppdmwatch.py`. Classes in order of appearance:
 |---|---|
 | `PPDMConfig` | Dataclass — host, port, credentials, poll interval, SSL flag |
 | `PPDMClient` | PPDM REST API v2 client — login, token refresh, all API calls |
-| `JobSummary` | Dataclass — counts: total, running, ok, failed, canceled, queued |
+| `JobSummary` | Dataclass — counts: total, running, success, failed, canceled, queued, ok_with_errors, unknown |
 | `DashboardState` | Shared mutable state passed between collector and renderer |
-| `AISummarizer` | Optional Claude Haiku 4.5 integration — 5-min cooldown, fires on failures |
+| `AISummarizer` | Optional Claude Haiku 4.5 integration — 5-min cooldown, fires on failures or rising trends |
 | `DataCollector` | Background thread — polls PPDM every N seconds, writes into `DashboardState` |
 | `Dashboard` | curses TUI renderer — 4 panels, color-coded, `q` to quit |
 | `BackgroundDaemon` | Daemon mode — rotating logs, threshold checks every 60 s |
@@ -56,6 +56,7 @@ All under `https://<host>:8443/api/v2`:
 | `GET` | `/storage-systems` | Data Domain capacity |
 | `GET` | `/alerts` | Active alerts by severity |
 | `GET` | `/system-health` | Overall health percentage |
+| `GET` | `/protection-engines` | Protection engine list |
 
 ### Activity filter syntax
 ```
@@ -65,11 +66,12 @@ Filters are OData-style strings passed as `?filter=` query param.
 
 ## Key Constraints
 
-- Token expires after ~8 h; `_ensure_auth()` refreshes 5 min before expiry
+- Token expires after 7 h (25 200 s); `_ensure_auth()` refreshes 5 min before expiry and retries up to 3 times with exponential backoff
 - `urllib3.disable_warnings()` is called at module level — expected, PPDM commonly uses self-signed certs
-- `DashboardState` is shared between `DataCollector` thread and `Dashboard` renderer — no locks, Python GIL is the only protection. Keep writes atomic (single assignment)
-- curses `color_pair` map: 1=green, 2=red, 3=yellow, 4=cyan, 5=white, 6=magenta (AI messages)
-- AI summaries only fire when `failed > 0` or `alerts_critical > 0` — never on healthy runs
+- `DashboardState` is shared between `DataCollector` thread and `Dashboard` renderer — no locks, Python GIL is the only protection. Keep writes atomic (single assignment). It carries two `deque(maxlen=6)` trend buffers: `failed_jobs_history` and `storage_pct_history`
+- curses `color_pair` map: 1=white (normal), 2=green (success), 3=red (failed/critical), 4=yellow (warning), 5=cyan (running), 6=magenta (header/AI)
+- AI summaries fire when `failed > 0` or `alerts_critical > 0`, **or** when failed-job count or max storage % has risen for 3 consecutive polls (predictive mode — asks Claude what breaks next)
+- Predictive mode cooldown is shared with the failure cooldown (5 min)
 - `--no-ssl-verify` suppresses warnings globally via urllib3, not per-request
 
 ## Daemon Mode
@@ -86,9 +88,14 @@ Linux systemd: `ppdmwatch.service` + `install.sh` (creates dedicated system user
 ## Files
 
 ```
-ppdmwatch.py          # Entire application (~640 lines)
+ppdmwatch.py          # Entire application
 ppdmwatch.service     # systemd unit
 install.sh            # One-shot Linux installer
 requirements.txt      # requests, urllib3, optional anthropic
 .env.example          # Credential template
+tests/
+  test_core.py        # 15 pytest unit tests for build_job_summary, build_messages, AISummarizer._should_predict
+.claude/
+  commands/
+    ppdm-status.md    # /ppdm-status — AI briefing from daemon logs
 ```

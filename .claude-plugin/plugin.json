@@ -1,0 +1,32 @@
+{
+  "name": "ppdm-watch",
+  "version": "1.3.0",
+  "description": "Real-time PPDM monitoring in your terminal — /ppdm-status AI briefing from daemon logs, trend-based predictive alerting, and domain expertise for the nsrwatch equivalent for PowerProtect Data Manager.",
+  "author": {
+    "name": "Moodswing9",
+    "url": "https://github.com/Moodswing9"
+  },
+  "homepage": "https://github.com/Moodswing9/ppdm-watch",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Moodswing9/ppdm-watch.git"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "dell-emc",
+    "ppdm",
+    "powerprotect",
+    "monitoring",
+    "tui",
+    "dashboard",
+    "daemon",
+    "nsrwatch",
+    "backup",
+    "data-protection",
+    "claude-skill"
+  ],
+  "components": {
+    "skills": ["./skills/ppdm-watch"],
+    "commands": ["./.claude/commands"]
+  }
+}
