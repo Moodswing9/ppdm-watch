@@ -749,6 +749,8 @@ Examples:
     p.add_argument("--ai-key", default=os.environ.get("ANTHROPIC_API_KEY"), help="Anthropic API key for AI alert summaries (or set ANTHROPIC_API_KEY)")
     p.add_argument("--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
     p.add_argument("--health-port", type=int, default=8080, help="Port for /health HTTP endpoint in daemon mode (default: 8080)")
+    p.add_argument("--export", nargs="?", const="-", metavar="FILE",
+                   help="One-shot JSON snapshot: dump to FILE (or stdout when omitted) and exit")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
@@ -768,6 +770,28 @@ def main() -> None:
     ai_summarizer = AISummarizer(args.ai_key) if args.ai_key and _ANTHROPIC_AVAILABLE else None
     if args.ai_key and not _ANTHROPIC_AVAILABLE:
         print("Warning: anthropic package not installed — AI summaries disabled. Run: pip install anthropic", file=sys.stderr)
+
+    if args.export is not None:
+        if not client.login():
+            print("Authentication failed. Check --host, --username, and --password.", file=sys.stderr)
+            sys.exit(1)
+        snapshot = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "host": args.host,
+            "activities": client.get_activities(page_size=500),
+            "storage_systems": client.get_storage_systems(),
+            "alerts": client.get_alerts(),
+            "system_health": client.get_system_health(),
+            "protection_engines": client.get_protection_engines(),
+        }
+        payload = json.dumps(snapshot, indent=2)
+        if args.export == "-":
+            print(payload)
+        else:
+            with open(args.export, "w") as fh:
+                fh.write(payload)
+            print(f"Exported to {args.export}", file=sys.stderr)
+        return
 
     if args.daemon:
         daemon = BackgroundDaemon(client, config, args.log_dir, ai_summarizer=ai_summarizer,
