@@ -248,6 +248,26 @@ def build_messages(critical_alerts: List[Dict], all_alerts: List[Dict]) -> List[
 
 # ─── AI Alert Summariser ──────────────────────────────────────────────────────
 
+_AI_SUMMARY_TOOL = {
+    "name": "ppdm_summary",
+    "description": "Structured one-line PPDM health summary",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "root_cause": {
+                "type": "string",
+                "description": "Most likely root cause in 10 words or fewer",
+            },
+            "action": {
+                "type": "string",
+                "description": "Single most important action to take, in 10 words or fewer",
+            },
+        },
+        "required": ["root_cause", "action"],
+    },
+}
+
+
 class AISummarizer:
     _COOLDOWN = 300  # seconds between Claude calls
 
@@ -302,7 +322,6 @@ class AISummarizer:
                     "and state the single most important thing to check first."
                 )
                 system = "You are a Dell PPDM expert. Be concise — one sentence only."
-                max_tokens = 140
             else:
                 prompt = (
                     f"PPDM health: {state.health_status} ({state.health_score}%)\n"
@@ -312,16 +331,21 @@ class AISummarizer:
                     "In one sentence, state the most likely root cause and the single most important action to take."
                 )
                 system = "You are a Dell PPDM expert. Be concise — one sentence only."
-                max_tokens = 120
 
             msg = client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=max_tokens,
+                max_tokens=256,
                 system=system,
+                tools=[_AI_SUMMARY_TOOL],
+                tool_choice={"type": "tool", "name": "ppdm_summary"},
                 messages=[{"role": "user", "content": prompt}],
             )
             self._last_call = time.time()
-            return msg.content[0].text.strip()
+            tool_use = next((b for b in msg.content if b.type == "tool_use"), None)
+            if tool_use:
+                r = tool_use.input
+                return f"{r['root_cause']} → {r['action']}"
+            return msg.content[0].text.strip() if msg.content else None
         except Exception as e:
             logging.warning(f"AI summarizer error: {e}")
             return None
