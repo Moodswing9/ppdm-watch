@@ -41,7 +41,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 | 🔄 Auto-polling | Configurable interval (default 5 s TUI / 30 s daemon) |
 | 📁 Rotating logs | Up to 5 × 10 MB log files under a configurable log directory |
 | 🚨 Threshold alerts | Fires on critical alerts, failed jobs, and storage > 85 % |
-| 🤖 AI alert summaries | Claude Haiku integration — root cause + action on failures (5-min cooldown). Predictive mode fires when failed jobs or max storage % climb 3 consecutive polls, asking Claude to predict what breaks next |
+| 🤖 AI alert summaries | Claude Haiku integration — structured tool use forces a `{root_cause, action}` pair on failures (5-min cooldown). Predictive mode fires when failed jobs or max storage % climb 3 consecutive polls, asking Claude to predict what breaks next |
 | 🏥 Health endpoint | `GET /health` HTTP endpoint (default port 8080) returns JSON status — HTTP 200 when connected, 503 when not. Designed for `systemd` `ExecStartPost` health checks and NSSM monitors |
 | 🐧 systemd-ready | Drop-in unit file + one-shot `install.sh` for Linux |
 | 🪟 Windows support | NSSM wrapper instructions included |
