@@ -10,6 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
 [![Status](https://img.shields.io/badge/status-stable-22c55e?style=flat-square)](#)
+[![Claude Haiku](https://img.shields.io/badge/AI-Claude%20Haiku%204.5-f59e0b?style=flat-square)](#ai-alert-summaries)
 
 </div>
 
