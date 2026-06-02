@@ -108,6 +108,17 @@ Designed for `systemd` `ExecStartPost` health checks and NSSM monitoring.
 
 Model: `claude-haiku-4-5-20251001`. Enabled via `--ai-key` (falls back to `$ANTHROPIC_API_KEY`).
 
+**Structured output via tool-calling.** Uses `tool_choice={"type": "tool", "name": "ppdm_summary"}` to force this exact JSON shape every call:
+
+```json
+{
+  "root_cause": "string — most likely root cause in 10 words or fewer",
+  "action":     "string — single most important action in 10 words or fewer"
+}
+```
+
+Tool schema name: `ppdm_summary`. Both fields are required strings.
+
 **Reactive mode** — fires when:
 - `protection_jobs.failed > 0`, OR
 - `alerts_critical > 0`
@@ -174,6 +185,7 @@ Shared between `DataCollector` thread and `Dashboard` renderer. No locks — GIL
 | `--no-ssl-verify` | off | Skip SSL cert check (common for PPDM lab/on-prem) |
 | `--ai-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic key for AI summaries |
 | `--health-port` | `8080` | Daemon HTTP health endpoint port |
+| `--export [FILE]` | — | One-shot JSON snapshot: authenticate, collect all data, write to FILE (or stdout if omitted), then exit |
 
 ---
 
