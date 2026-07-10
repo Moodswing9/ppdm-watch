@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ppdmwatch import (
     build_job_summary, build_messages, JobSummary, DashboardState, AISummarizer,
-    PPDMConfig, PPDMClient, DataCollector,
+    PPDMConfig, PPDMClient, DataCollector, MCPBridge,
+    _MCP_AVAILABLE, __version__,
 )
 
 
@@ -284,3 +285,76 @@ def test_data_collector_run_catches_error_and_marks_disconnected():
 
     assert state.connected is False
     assert state.error == "PPDM unreachable"
+
+
+# ── Version ────────────────────────────────────────────────────────────────────
+
+def test_version_is_v2():
+    assert __version__ == "2.0.0"
+
+
+# ── MCP availability flag ──────────────────────────────────────────────────────
+
+def test_mcp_available_is_bool():
+    assert isinstance(_MCP_AVAILABLE, bool)
+
+
+# ── MCPBridge ─────────────────────────────────────────────────────────────────
+
+def test_mcp_bridge_init():
+    state = DashboardState()
+    bridge = MCPBridge(state)
+    assert bridge._state is state
+
+
+def test_mcp_bridge_run_exits_when_mcp_not_available():
+    import ppdmwatch
+    state = DashboardState()
+    bridge = MCPBridge(state)
+    original = ppdmwatch._MCP_AVAILABLE
+    try:
+        ppdmwatch._MCP_AVAILABLE = False
+        with pytest.raises(SystemExit):
+            bridge.run()
+    finally:
+        ppdmwatch._MCP_AVAILABLE = original
+
+
+def test_mcp_bridge_state_snapshot_structure():
+    """Verify that DashboardState fields used by MCPBridge tools have the expected structure."""
+    import json
+    state = DashboardState()
+    state.protection_jobs = JobSummary(total=10, running=2, success=7, failed=1)
+    state.last_update = "2026-07-10T00:00:00Z"
+    state.connected = True
+    state.health_score = 95
+    state.health_status = "GOOD"
+    state.alerts_critical = 0
+    state.alerts_warning = 1
+    state.alerts_info = 3
+
+    # Validate the JSON snapshot shape used by get_job_summary
+    with state.lock:
+        pj = state.protection_jobs
+        snap = json.dumps({
+            "protection_jobs": {
+                "total": pj.total, "running": pj.running, "queued": pj.queued,
+                "success": pj.success, "failed": pj.failed,
+            },
+            "connected": state.connected,
+            "last_update": state.last_update,
+        })
+    result = json.loads(snap)
+    assert result["protection_jobs"]["total"] == 10
+    assert result["protection_jobs"]["failed"] == 1
+    assert result["connected"] is True
+
+    # Validate the JSON snapshot shape used by get_active_alerts
+    with state.lock:
+        alerts_snap = json.loads(json.dumps({
+            "critical": state.alerts_critical,
+            "warning": state.alerts_warning,
+            "info": state.alerts_info,
+        }))
+    assert alerts_snap["critical"] == 0
+    assert alerts_snap["warning"] == 1

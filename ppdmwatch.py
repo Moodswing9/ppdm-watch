@@ -6,7 +6,7 @@ Equivalent to nsrwatch for NetWorker.
 
 from __future__ import annotations
 
-__version__ = "1.3.0"
+__version__ = "2.0.0"
 __author__ = "Timur Poyraz"
 
 import argparse
@@ -35,6 +35,12 @@ try:
     _ANTHROPIC_AVAILABLE = True
 except ImportError:
     _ANTHROPIC_AVAILABLE = False
+
+try:
+    from mcp.server.fastmcp import FastMCP as _FastMCP
+    _MCP_AVAILABLE = True
+except ImportError:
+    _MCP_AVAILABLE = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -333,7 +339,7 @@ class AISummarizer:
                 system = "You are a Dell PPDM expert. Be concise — one sentence only."
 
             msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-opus-4-7",
                 max_tokens=256,
                 system=system,
                 tools=[_AI_SUMMARY_TOOL],
@@ -682,6 +688,110 @@ class HealthServer(threading.Thread):
             httpd.serve_forever()
 
 
+# ─── MCP Bridge ──────────────────────────────────────────────────────────────
+
+class MCPBridge:
+    """Exposes live DashboardState data as MCP tools over stdio.
+
+    Start with --mcp flag: DataCollector runs in a background thread while this
+    class serves Claude Code tool calls over stdin/stdout JSON-RPC.
+    """
+
+    def __init__(self, state: DashboardState) -> None:
+        self._state = state
+
+    def run(self) -> None:
+        if not _MCP_AVAILABLE:
+            print(
+                "Error: 'mcp' package not installed. Run: pip install 'mcp>=1.0.0'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        server = _FastMCP("ppdm-watch")
+        state = self._state
+
+        @server.tool()
+        def get_job_summary() -> str:
+            """Return current PPDM protection and system job counts as JSON."""
+            with state.lock:
+                pj = state.protection_jobs
+                sj = state.system_jobs
+                return json.dumps({
+                    "protection_jobs": {
+                        "total": pj.total,
+                        "running": pj.running,
+                        "queued": pj.queued,
+                        "success": pj.success,
+                        "failed": pj.failed,
+                        "canceled": pj.canceled,
+                        "ok_with_errors": pj.ok_with_errors,
+                    },
+                    "system_jobs": {
+                        "total": sj.total,
+                        "running": sj.running,
+                        "queued": sj.queued,
+                        "success": sj.success,
+                        "failed": sj.failed,
+                    },
+                    "last_update": state.last_update,
+                    "connected": state.connected,
+                })
+
+        @server.tool()
+        def get_storage_status() -> str:
+            """Return PPDM storage system capacity utilisation as JSON."""
+            with state.lock:
+                systems = []
+                for s in state.storage_systems:
+                    cap = s.get("capacity", {})
+                    used = cap.get("used", 0)
+                    total = cap.get("total", 1)
+                    pct = round((used / total * 100) if total > 0 else 0.0, 1)
+                    systems.append({
+                        "name": s.get("name", "Unknown"),
+                        "status": s.get("status", "Unknown"),
+                        "used_pct": pct,
+                        "used_gb": round(used / 1_073_741_824, 1),
+                        "total_gb": round(total / 1_073_741_824, 1),
+                    })
+                return json.dumps({
+                    "storage_systems": systems,
+                    "max_used_pct": max((s["used_pct"] for s in systems), default=0.0),
+                    "last_update": state.last_update,
+                })
+
+        @server.tool()
+        def get_active_alerts() -> str:
+            """Return PPDM active alert counts and recent alert messages as JSON."""
+            with state.lock:
+                return json.dumps({
+                    "critical": state.alerts_critical,
+                    "warning": state.alerts_warning,
+                    "info": state.alerts_info,
+                    "recent_alerts": [
+                        {"severity": a.get("severity", "?"), "message": a.get("message", "")}
+                        for a in state.recent_alerts[:10]
+                    ],
+                    "last_update": state.last_update,
+                })
+
+        @server.tool()
+        def get_health() -> str:
+            """Return PPDM health score, connection status, and latest AI summary as JSON."""
+            with state.lock:
+                return json.dumps({
+                    "health_score": state.health_score,
+                    "health_status": state.health_status,
+                    "connected": state.connected,
+                    "ai_summary": state.ai_summary,
+                    "error": state.error,
+                    "last_update": state.last_update,
+                })
+
+        server.run()
+
+
 # ─── Background Daemon ────────────────────────────────────────────────────────
 
 class BackgroundDaemon:
@@ -775,6 +885,8 @@ Examples:
     p.add_argument("--health-port", type=int, default=8080, help="Port for /health HTTP endpoint in daemon mode (default: 8080)")
     p.add_argument("--export", nargs="?", const="-", metavar="FILE",
                    help="One-shot JSON snapshot: dump to FILE (or stdout when omitted) and exit")
+    p.add_argument("--mcp", action="store_true",
+                   help="Run as MCP stdio server — exposes live dashboard data as Claude Code tools (requires: pip install 'mcp>=1.0.0')")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
@@ -817,7 +929,20 @@ def main() -> None:
             print(f"Exported to {args.export}", file=sys.stderr)
         return
 
-    if args.daemon:
+    if args.mcp:
+        if not client.login():
+            print("Authentication failed. Check --host, --username, and --password.", file=sys.stderr)
+            sys.exit(1)
+        state = DashboardState()
+        collector = DataCollector(client, state, config.poll_interval, ai_summarizer=ai_summarizer)
+        collector.start()
+        bridge = MCPBridge(state)
+        try:
+            bridge.run()
+        finally:
+            collector.stop()
+            collector.join()
+    elif args.daemon:
         daemon = BackgroundDaemon(client, config, args.log_dir, ai_summarizer=ai_summarizer,
                                   health_port=args.health_port)
 

@@ -22,7 +22,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install requests urllib3 anthropic pytest
+        run: pip install requests urllib3 anthropic "mcp>=1.0.0" pytest
 
       - name: Run tests
         run: pytest tests/test_core.py -v
