@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ppdmwatch import (
     build_job_summary, build_messages, JobSummary, DashboardState, AISummarizer,
-    PPDMConfig, PPDMClient, DataCollector, MCPBridge,
+    PPDMConfig, PPDMClient, DataCollector, MCPBridge, AnomalyBaseline,
     _MCP_AVAILABLE, __version__,
 )
 
@@ -290,7 +290,7 @@ def test_data_collector_run_catches_error_and_marks_disconnected():
 # ── Version ────────────────────────────────────────────────────────────────────
 
 def test_version_is_v2():
-    assert __version__ == "2.0.0"
+    assert __version__ == "2.1.0"
 
 
 # ── MCP availability flag ──────────────────────────────────────────────────────
@@ -358,3 +358,57 @@ def test_mcp_bridge_state_snapshot_structure():
         }))
     assert alerts_snap["critical"] == 0
     assert alerts_snap["warning"] == 1
+
+
+# ── AnomalyBaseline ───────────────────────────────────────────────────────────
+
+def test_version_is_v2_1():
+    assert __version__ == "2.1.0"
+
+
+def test_anomaly_baseline_init():
+    b = AnomalyBaseline()
+    assert b.is_calibrated is False
+    assert b.calibration_progress == 0
+
+
+def test_anomaly_baseline_calibrates_after_n_polls():
+    b = AnomalyBaseline(calibration_polls=5)
+    metrics = {"failed_jobs": 0.0, "storage_pct": 50.0}
+    for _ in range(5):
+        b.record(metrics)
+    assert b.is_calibrated is True
+
+
+def test_anomaly_baseline_not_calibrated_before_n_polls():
+    b = AnomalyBaseline(calibration_polls=5)
+    for _ in range(4):
+        b.record({"failed_jobs": 0.0, "storage_pct": 50.0})
+    assert b.is_calibrated is False
+
+
+def test_anomaly_baseline_detects_spike():
+    b = AnomalyBaseline(calibration_polls=5, sigma=2.0)
+    # Use varied baseline so stdev > 0
+    for v in [48.0, 50.0, 52.0, 49.0, 51.0]:
+        b.record({"storage_pct": v})
+    anomalous, reasons = b.is_anomalous({"storage_pct": 95.0})
+    assert anomalous is True
+    assert any("storage_pct" in r for r in reasons)
+
+
+def test_anomaly_baseline_ignores_normal_variation():
+    b = AnomalyBaseline(calibration_polls=5, sigma=2.5)
+    for v in [48.0, 50.0, 52.0, 49.0, 51.0]:
+        b.record({"storage_pct": v})
+    # 51.0 is well within 2.5σ of mean~50
+    anomalous, _ = b.is_anomalous({"storage_pct": 51.0})
+    assert anomalous is False
+
+
+def test_calibration_progress():
+    b = AnomalyBaseline(calibration_polls=10)
+    assert b.calibration_progress == 0
+    for i in range(1, 6):
+        b.record({"x": float(i)})
+        assert b.calibration_progress == i

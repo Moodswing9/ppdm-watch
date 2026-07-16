@@ -6,7 +6,7 @@ Equivalent to nsrwatch for NetWorker.
 
 from __future__ import annotations
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Timur Poyraz"
 
 import argparse
@@ -214,6 +214,7 @@ class DashboardState:
     ai_summary: Optional[str] = None
     failed_jobs_history: Deque[int] = field(default_factory=lambda: deque(maxlen=6))
     storage_pct_history: Deque[float] = field(default_factory=lambda: deque(maxlen=6))
+    calibration_status: str = ""
 
 
 # ─── Pure helper functions ────────────────────────────────────────────────────
@@ -357,6 +358,55 @@ class AISummarizer:
             return None
 
 
+# ─── Anomaly Baseline ─────────────────────────────────────────────────────────
+
+class AnomalyBaseline:
+    """Learns normal metric ranges over N polls, then flags deviations beyond sigma."""
+
+    def __init__(self, calibration_polls: int = 10, sigma: float = 2.5) -> None:
+        self._calibration_polls = calibration_polls
+        self._sigma = sigma
+        self._samples: dict[str, list[float]] = {}
+        self._calibrated = False
+
+    def record(self, metrics: dict[str, float]) -> None:
+        for key, val in metrics.items():
+            self._samples.setdefault(key, []).append(val)
+            if len(self._samples[key]) > self._calibration_polls * 2:
+                self._samples[key] = self._samples[key][-self._calibration_polls * 2:]
+        if not self._calibrated:
+            min_len = min((len(v) for v in self._samples.values()), default=0)
+            if min_len >= self._calibration_polls:
+                self._calibrated = True
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+    @property
+    def calibration_progress(self) -> int:
+        if not self._samples:
+            return 0
+        return min(min(len(v) for v in self._samples.values()), self._calibration_polls)
+
+    def is_anomalous(self, metrics: dict[str, float]) -> tuple[bool, list[str]]:
+        if not self._calibrated:
+            return False, []
+        reasons: list[str] = []
+        for key, val in metrics.items():
+            samples = self._samples.get(key, [])
+            if len(samples) < 2:
+                continue
+            mean = sum(samples) / len(samples)
+            stdev = (sum((x - mean) ** 2 for x in samples) / len(samples)) ** 0.5
+            if stdev == 0:
+                continue
+            if abs(val - mean) > self._sigma * stdev:
+                direction = "↑" if val > mean else "↓"
+                reasons.append(f"{key}: {val:.1f} {direction} (baseline {mean:.1f}±{stdev:.1f})")
+        return len(reasons) > 0, reasons
+
+
 # ─── Background Data Collector ────────────────────────────────────────────────
 
 class DataCollector(threading.Thread):
@@ -368,6 +418,7 @@ class DataCollector(threading.Thread):
         self.interval = interval
         self._ai = ai_summarizer
         self._stop_event = threading.Event()
+        self._baseline = AnomalyBaseline(calibration_polls=10, sigma=2.5)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -452,11 +503,34 @@ class DataCollector(threading.Thread):
             self.state.failed_jobs_history.append(prot_summary.failed)
             self.state.storage_pct_history.append(max_storage_pct)
 
+        # Feed baseline and update calibration status
+        baseline_metrics = {
+            "failed_jobs": float(prot_summary.failed),
+            "storage_pct": max_storage_pct,
+            "alerts_critical": float(len(critical_alerts)),
+        }
+        self._baseline.record(baseline_metrics)
+        if self._baseline.is_calibrated:
+            cal_status = "[Baseline calibrated ✓]"
+        else:
+            n = self._baseline.calibration_progress
+            cal_status = f"[Calibrating baseline: {n}/10 polls]"
+        with self.state.lock:
+            self.state.calibration_status = cal_status
+
         if self._ai:
-            ai_text = self._ai.summarize(self.state)
-            if ai_text:
-                with self.state.lock:
-                    self.state.ai_summary = f"[AI] {ai_text}"
+            if not self._baseline.is_calibrated:
+                pass  # wait for baseline before firing AI
+            else:
+                anomalous, reasons = self._baseline.is_anomalous(baseline_metrics)
+                if anomalous:
+                    # Inject anomaly reasons into the summarizer state before calling
+                    with self.state.lock:
+                        self.state.messages = [f"[ANOMALY] {r}" for r in reasons] + list(self.state.messages)
+                    ai_text = self._ai.summarize(self.state)
+                    if ai_text:
+                        with self.state.lock:
+                            self.state.ai_summary = f"[AI] {ai_text}"
 
 
 # ─── TUI Dashboard ────────────────────────────────────────────────────────────
