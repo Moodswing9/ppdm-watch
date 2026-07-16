@@ -9,6 +9,8 @@
 
 Think `nsrwatch` for NetWorker, but for PowerProtect Data Manager.
 
+Current version: **2.1.0** — adds `AnomalyBaseline` statistical anomaly detection (mean ± 2.5σ, 10-poll calibration window).
+
 ## Commands
 
 ```bash
@@ -44,7 +46,8 @@ Everything lives in `ppdmwatch.py`. Classes in order of appearance:
 | `PPDMClient` | PPDM REST API v2 client — login, token refresh, all API calls |
 | `JobSummary` | Dataclass — counts: total, running, success, failed, canceled, queued, ok_with_errors, unknown |
 | `DashboardState` | Shared mutable state passed between collector and renderer |
-| `AISummarizer` | Optional Claude Opus 4.7 integration — 5-min cooldown, fires on failures or rising trends |
+| `AnomalyBaseline` | Statistical baseline — records metrics over 10 polls, then detects deviations > 2.5σ |
+| `AISummarizer` | Optional Claude Opus 4.7 integration — 5-min cooldown, fires when baseline flags anomaly |
 | `DataCollector` | Background thread — polls PPDM every N seconds, writes into `DashboardState` |
 | `Dashboard` | curses TUI renderer — 4 panels, color-coded, `q` to quit |
 | `HealthServer` | Minimal HTTP thread — `GET /health` JSON endpoint for liveness probes |
@@ -102,8 +105,10 @@ All tool outputs are JSON strings. The `last_update` field in each response show
 - `urllib3.disable_warnings()` is called at module level — expected, PPDM commonly uses self-signed certs
 - `DashboardState` uses a `threading.Lock` for all reads/writes — safe to access from `DataCollector` thread and MCPBridge tool calls concurrently
 - curses `color_pair` map: 1=white (normal), 2=green (success), 3=red (failed/critical), 4=yellow (warning), 5=cyan (running), 6=magenta (header/AI)
-- AI summaries use **Claude Opus 4.7** (upgraded from Haiku 4.5 in v2.0.0). Fire when `failed > 0` or `alerts_critical > 0`, **or** when failed-job count or max storage % has risen for 3 consecutive polls (predictive mode)
-- Predictive mode cooldown is shared with the failure cooldown (5 min)
+- AI summaries use **Claude Opus 4.7** (upgraded from Haiku 4.5 in v2.0.0). Fire only after `AnomalyBaseline` is calibrated (10 polls) and `is_anomalous()` returns True — eliminates false positives during startup
+- `AnomalyBaseline` tracks `failed_jobs`, `storage_pct`, `alerts_critical`; anomaly = value > mean + 2.5 × stdev; zero-variance metrics are skipped
+- Calibration progress shows in the TUI as `[Calibrating baseline: N/10 polls]` → `[Baseline calibrated ✓]`
+- AI cooldown is 5 min (shared between anomaly triggers)
 - `--no-ssl-verify` suppresses warnings globally via urllib3, not per-request
 - MCP bridge requires `pip install "mcp>=1.0.0"` — gracefully exits with an error message if not installed
 
@@ -127,8 +132,9 @@ install.sh            # One-shot Linux installer
 requirements.txt      # requests, urllib3, anthropic (optional), mcp (optional)
 .env.example          # Credential template
 tests/
-  test_core.py        # 30 pytest unit tests — build_job_summary, build_messages,
-                      #   AISummarizer._should_predict, PPDMClient, DataCollector, MCPBridge
+  test_core.py        # 37 pytest unit tests — build_job_summary, build_messages,
+                      #   AISummarizer._should_predict, PPDMClient, DataCollector, MCPBridge,
+                      #   AnomalyBaseline (calibration, spike detection, normal variation)
 .claude/
   commands/
     ppdm-status.md    # /ppdm-status — AI briefing from daemon logs
