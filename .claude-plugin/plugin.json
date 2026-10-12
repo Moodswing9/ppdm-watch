@@ -1,6 +1,6 @@
 {
   "name": "ppdm-watch",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Real-time PPDM monitoring in your terminal — /ppdm-status AI briefing from daemon logs, trend-based predictive alerting, MCP bridge mode (4 Claude Code tools for live job/storage/alert/health data), and Claude Opus 4.7 AI summaries.",
   "author": {
     "name": "Moodswing9",
