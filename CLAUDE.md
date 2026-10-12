@@ -9,7 +9,7 @@
 
 Think `nsrwatch` for NetWorker, but for PowerProtect Data Manager.
 
-Current version: **2.1.0** — adds `AnomalyBaseline` statistical anomaly detection (mean ± 2.5σ, 10-poll calibration window).
+Current version: **2.1.1** — adds `AnomalyBaseline` statistical anomaly detection (mean ± 2.5σ, 10-poll calibration window).
 
 ## Commands
 

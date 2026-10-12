@@ -4,7 +4,7 @@
 
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
-[![Version](https://img.shields.io/badge/version-2.1.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
+[![Version](https://img.shields.io/badge/version-2.1.1-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/Moodswing9/ppdm-watch/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/Moodswing9/ppdm-watch/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
@@ -202,11 +202,18 @@ nssm start ppdmwatch
 
 Install as a Claude Code plugin to get `/ppdm-status` directly in your terminal:
 
+From a terminal:
+
 ```bash
-npx skills add Moodswing9/ppdm-watch -g
+claude plugin marketplace add Moodswing9/claude-plugins
+claude plugin install ppdm-watch@moodswing9
 ```
 
-This registers the skill and command globally so you can run `/ppdm-status` from any Claude Code session.
+This installs `/ppdm-status` and the skill.
+
+Or inside Claude Code: `/plugin marketplace add Moodswing9/claude-plugins`, then `/plugin install ppdm-watch@moodswing9`.
+
+Only need the knowledge skill, without the slash commands? `npx skills add Moodswing9/ppdm-watch -g` installs just the skill.
 
 | Command | What it does |
 |:---|:---|

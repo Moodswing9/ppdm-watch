@@ -1,17 +1,15 @@
 {
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "ppdm-watch",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Real-time PPDM monitoring in your terminal — /ppdm-status AI briefing from daemon logs, trend-based predictive alerting, MCP bridge mode (4 Claude Code tools for live job/storage/alert/health data), and Claude Opus 4.7 AI summaries.",
   "author": {
     "name": "Moodswing9",
     "url": "https://github.com/Moodswing9"
   },
   "homepage": "https://github.com/Moodswing9/ppdm-watch",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Moodswing9/ppdm-watch.git"
-  },
-  "license": "SEE LICENSE IN LICENSE",
+  "repository": "https://github.com/Moodswing9/ppdm-watch",
+  "license": "MIT",
   "keywords": [
     "dell-emc",
     "ppdm",
@@ -25,8 +23,7 @@
     "data-protection",
     "claude-skill"
   ],
-  "components": {
-    "skills": ["./skills/ppdm-watch"],
-    "commands": ["./.claude/commands"]
-  }
+  "commands": [
+    "./.claude/commands/"
+  ]
 }
