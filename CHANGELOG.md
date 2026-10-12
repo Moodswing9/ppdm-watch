@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1] — 2026-10-12
+### Fixed
+- Claude Code plugin manifest passes `claude plugin validate`: `repository` is a URL, `license` is MIT and the unsupported `components` field is gone; the `/ppdm-status` command in `.claude/commands/` is now declared, so it loads
+- Install docs: the plugin is now installed from the Moodswing9 marketplace (`claude plugin marketplace add Moodswing9/claude-plugins`, then `claude plugin install ppdm-watch@moodswing9`). The previously documented `npx skills add` installs only the skill, not the slash commands
+
+### Added
+- CI validates the plugin manifest on every push and pull request
+
 ## [Unreleased]
 ### Fixed
 - CI workflow triggered on `main`, but the default branch is `master`, so the test suite never ran on GitHub; it now runs on every push and pull request

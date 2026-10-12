@@ -290,7 +290,7 @@ def test_data_collector_run_catches_error_and_marks_disconnected():
 # ── Version ────────────────────────────────────────────────────────────────────
 
 def test_version_is_v2():
-    assert __version__ == "2.1.0"
+    assert __version__ == "2.1.1"
 
 
 # ── MCP availability flag ──────────────────────────────────────────────────────
@@ -363,7 +363,7 @@ def test_mcp_bridge_state_snapshot_structure():
 # ── AnomalyBaseline ───────────────────────────────────────────────────────────
 
 def test_version_is_v2_1():
-    assert __version__ == "2.1.0"
+    assert __version__ == "2.1.1"
 
 
 def test_anomaly_baseline_init():
