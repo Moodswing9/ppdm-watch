@@ -156,7 +156,7 @@ python ppdmwatch.py \
 ppdm-watch/
 ├── ppdmwatch.py          # Main application — TUI, daemon, API client
 ├── tests/
-│   └── test_core.py      # Pytest suite — 15 unit tests for core logic
+│   └── test_core.py      # Pytest suite — 37 unit tests for core logic
 ├── ppdmwatch.service     # systemd unit file for Linux deployments
 ├── install.sh            # One-shot Linux installer (venv, user, credentials, service)
 ├── requirements.txt      # requests, urllib3 (+ optional anthropic)
