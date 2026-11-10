@@ -9,10 +9,11 @@
 - `anthropic` requirement → `>=2.7.0` (API version `2026-10-21`)
 
 ### Fixed
+- **`--mcp` bridge mode failed on fresh installs.** The requirement was `mcp>=1.0.0` with no upper bound, and mcp 2.x renamed `FastMCP` to `MCPServer`, so a new install got mcp 2.x and `--mcp` exited with a misleading "'mcp' package not installed" error. The requirement (and CI and docs) is now `mcp>=1.0.0,<2`, and the error names the real import failure
 - README and SKILL.md said dashboard summaries used Claude Haiku with forced tool use; they have used Opus since v2.0.0
 
 ### Added
-- Unit tests for `AISummarizer.summarize()` (40 tests in total)
+- Unit tests for `AISummarizer.summarize()`, and a regression test that fails when the installed `mcp` cannot load the bridge (41 tests in total)
 
 ## [2.1.1] — 2026-10-12
 ### Fixed
