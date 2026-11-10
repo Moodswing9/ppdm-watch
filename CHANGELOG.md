@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.0] — 2026-11-10
+### Changed
+- Dashboard AI summaries run on **Claude Opus 5.5** (`claude-opus-5-5`) at `low` effort. The forced `tool_choice` they relied on is rejected by Opus 5.5, so the `{root_cause, action}` shape now comes from structured outputs (`output_config.format`). Measured on a failing-state prompt: $0.0031 per summary vs $0.0086 on Opus 4.7 with the forced tool, with a sharper answer
+- `max_tokens` 256 → 2000, because thinking shares the limit with the answer; text is read by block type
+- If Claude declines, the API first retries on a fallback model (`fallbacks: "default"`); a final refusal is logged and the dashboard shows no summary
+- `/ppdm-status` moves to **Claude Haiku 5.5** (`claude-haiku-5-5`) with thinking off and `medium` effort, and reports a refusal or a cut-off report
+- `anthropic` requirement → `>=2.7.0` (API version `2026-10-21`)
+
+### Fixed
+- README and SKILL.md said dashboard summaries used Claude Haiku with forced tool use; they have used Opus since v2.0.0
+
+### Added
+- Unit tests for `AISummarizer.summarize()` (40 tests in total)
+
 ## [2.1.1] — 2026-10-12
 ### Fixed
 - Claude Code plugin manifest passes `claude plugin validate`: `repository` is a URL, `license` is MIT and the unsupported `components` field is gone; the `/ppdm-status` command in `.claude/commands/` is now declared, so it loads

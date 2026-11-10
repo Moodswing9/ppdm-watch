@@ -4,13 +4,13 @@
 
 **Real-time terminal monitoring dashboard for Dell PowerProtect Data Manager — the `nsrwatch` equivalent for PPDM**
 
-[![Version](https://img.shields.io/badge/version-2.1.1-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-6366f1?style=flat-square)](https://github.com/Moodswing9/ppdm-watch/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/Moodswing9/ppdm-watch/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/Moodswing9/ppdm-watch/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3b82f6?style=flat-square)](#requirements)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-f59e0b?style=flat-square)](#installation)
 [![Status](https://img.shields.io/badge/status-stable-22c55e?style=flat-square)](#)
-[![Claude Haiku](https://img.shields.io/badge/AI-Claude%20Haiku%204.5-f59e0b?style=flat-square)](#ai-alert-summaries)
+[![Claude Opus](https://img.shields.io/badge/AI-Claude%20Opus%205.5-f59e0b?style=flat-square)](#ai-alert-summaries)
 
 </div>
 
@@ -42,7 +42,7 @@ If you have used `nsrwatch` for NetWorker, this is the same idea for PowerProtec
 | 🔄 Auto-polling | Configurable interval (default 5 s TUI / 30 s daemon) |
 | 📁 Rotating logs | Up to 5 × 10 MB log files under a configurable log directory |
 | 🚨 Threshold alerts | Fires on critical alerts, failed jobs, and storage > 85 % |
-| 🤖 AI alert summaries | Claude Haiku integration — structured tool use forces a `{root_cause, action}` pair on failures (5-min cooldown). Predictive mode fires when failed jobs or max storage % climb 3 consecutive polls, asking Claude to predict what breaks next |
+| 🤖 AI alert summaries | Claude Opus 5.5 integration — structured outputs guarantee a `{root_cause, action}` pair on failures (5-min cooldown). Predictive mode fires when failed jobs or max storage % climb 3 consecutive polls, asking Claude to predict what breaks next |
 | 🏥 Health endpoint | `GET /health` HTTP endpoint (default port 8080) returns JSON status — HTTP 200 when connected, 503 when not. Designed for `systemd` `ExecStartPost` health checks and NSSM monitors |
 | 🐧 systemd-ready | Drop-in unit file + one-shot `install.sh` for Linux |
 | 🪟 Windows support | NSSM wrapper instructions included |

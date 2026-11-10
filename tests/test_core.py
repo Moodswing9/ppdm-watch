@@ -290,7 +290,7 @@ def test_data_collector_run_catches_error_and_marks_disconnected():
 # ── Version ────────────────────────────────────────────────────────────────────
 
 def test_version_is_v2():
-    assert __version__ == "2.1.1"
+    assert __version__ == "2.2.0"
 
 
 # ── MCP availability flag ──────────────────────────────────────────────────────
@@ -363,7 +363,7 @@ def test_mcp_bridge_state_snapshot_structure():
 # ── AnomalyBaseline ───────────────────────────────────────────────────────────
 
 def test_version_is_v2_1():
-    assert __version__ == "2.1.1"
+    assert __version__ == "2.2.0"
 
 
 def test_anomaly_baseline_init():
@@ -412,3 +412,58 @@ def test_calibration_progress():
     for i in range(1, 6):
         b.record({"x": float(i)})
         assert b.calibration_progress == i
+
+
+# ── AISummarizer.summarize (Claude mocked) ─────────────────────────────────────
+
+import json as _json
+from types import SimpleNamespace as _NS
+
+import ppdmwatch as _pw
+
+
+def _failing_state():
+    state = DashboardState()
+    state.protection_jobs.failed = 4
+    state.alerts_critical = 1
+    state.recent_alerts = [{"severity": "CRITICAL", "message": "Storage unit 96% full"}]
+    return state
+
+
+def _summarize_with(response):
+    client = MagicMock()
+    client.beta.messages.create.return_value = response
+    fake_anthropic = MagicMock()
+    fake_anthropic.Anthropic.return_value = client
+    with patch.object(_pw, "_ANTHROPIC_AVAILABLE", True), \
+         patch.object(_pw, "_anthropic", fake_anthropic, create=True):
+        result = AISummarizer("sk-test").summarize(_failing_state())
+    return result, client
+
+
+def _reply(*blocks, stop_reason="end_turn"):
+    return _NS(stop_reason=stop_reason, content=[_NS(**b) for b in blocks])
+
+
+def test_summarize_uses_structured_output_not_forced_tool():
+    # Claude Opus 5.5 rejects tool_choice {"type": "tool"} with a 400.
+    payload = _json.dumps({"root_cause": "DD storage unit full", "action": "Expire old copies"})
+    _, client = _summarize_with(_reply({"type": "text", "text": payload}))
+    kwargs = client.beta.messages.create.call_args.kwargs
+    assert "tool_choice" not in kwargs and "tools" not in kwargs
+    assert kwargs["model"] == "claude-opus-5-5"
+    assert kwargs["output_config"]["effort"] == "low"
+    assert kwargs["output_config"]["format"]["type"] == "json_schema"
+    assert kwargs["max_tokens"] >= 1000  # thinking shares the limit
+    assert kwargs["fallbacks"] == "default"
+
+
+def test_summarize_reads_json_after_a_thinking_block():
+    payload = _json.dumps({"root_cause": "DD storage unit full", "action": "Expire old copies"})
+    result, _ = _summarize_with(_reply({"type": "thinking", "thinking": ""}, {"type": "text", "text": payload}))
+    assert result == "DD storage unit full → Expire old copies"
+
+
+def test_summarize_returns_none_on_refusal():
+    result, _ = _summarize_with(_reply(stop_reason="refusal"))
+    assert result is None

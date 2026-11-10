@@ -14,7 +14,7 @@ Activate this skill when the user asks about:
 - Reading or troubleshooting daemon logs at `--log-dir`
 - The `/health` endpoint or liveness probes
 - Predictive alerting, trend detection, rising polls
-- Claude Haiku AI summaries in the dashboard
+- Claude Opus 5.5 AI summaries in the dashboard
 - Running ppdmwatch as a service (systemd, NSSM)
 - `/ppdm-status` command output
 
@@ -106,9 +106,9 @@ Designed for `systemd` `ExecStartPost` health checks and NSSM monitoring.
 
 ## AI Summaries (AISummarizer)
 
-Model: `claude-haiku-4-5-20251001`. Enabled via `--ai-key` (falls back to `$ANTHROPIC_API_KEY`).
+Model: `claude-opus-5-5` at `effort: "low"` (about $0.003 per summary). Enabled via `--ai-key` (falls back to `$ANTHROPIC_API_KEY`).
 
-**Structured output via tool-calling.** Uses `tool_choice={"type": "tool", "name": "ppdm_summary"}` to force this exact JSON shape every call:
+**Structured outputs.** `output_config.format` with a JSON schema guarantees this exact shape on every call (a forced `tool_choice` is rejected by Claude Opus 5.5):
 
 ```json
 {
@@ -117,7 +117,7 @@ Model: `claude-haiku-4-5-20251001`. Enabled via `--ai-key` (falls back to `$ANTH
 }
 ```
 
-Tool schema name: `ppdm_summary`. Both fields are required strings.
+Schema: `_AI_SUMMARY_SCHEMA`. Both fields are required strings.
 
 **Reactive mode** — fires when:
 - `protection_jobs.failed > 0`, OR
@@ -192,7 +192,7 @@ Shared between `DataCollector` thread and `Dashboard` renderer. No locks — GIL
 ## Few-Shot Examples
 
 **Q: The magenta "[AI]" message says "3 consecutive rising polls" but there are no failures. Is something broken?**
-A: No — predictive mode triggered. `storage_pct_history` has grown for 3 consecutive polls. No jobs have failed yet, but max storage % across Data Domain systems is climbing. Claude Haiku is predicting what breaks next (likely watermark breach or disk-full backup failures). Watch storage Panel 2 closely.
+A: No — predictive mode triggered. `storage_pct_history` has grown for 3 consecutive polls. No jobs have failed yet, but max storage % across Data Domain systems is climbing. Claude is predicting what breaks next (likely watermark breach or disk-full backup failures). Watch storage Panel 2 closely.
 
 **Q: "OK w/ Errors: 2" — should I be worried?**
 A: Not immediately. `OK_WITH_ERRORS` means the job completed but logged sub-errors (skipped files, a warning event). If the count grows each poll cycle, investigate the specific assets — run `/ppdm-failed-jobs` or check the PPDM activity log.
