@@ -33,7 +33,7 @@ python ppdmwatch.py --host ppdm01.example.com -u admin -p secret --no-ssl-verify
 # Install dependencies
 pip install -r requirements.txt          # requests, urllib3, anthropic, mcp
 pip install anthropic                    # optional — AI summaries (Claude Opus 5.5)
-pip install "mcp>=1.0.0"               # optional — MCP bridge mode
+pip install "mcp>=1.0.0,<2"               # optional — MCP bridge mode
 ```
 
 ## Architecture
@@ -110,7 +110,7 @@ All tool outputs are JSON strings. The `last_update` field in each response show
 - Calibration progress shows in the TUI as `[Calibrating baseline: N/10 polls]` → `[Baseline calibrated ✓]`
 - AI cooldown is 5 min (shared between anomaly triggers)
 - `--no-ssl-verify` suppresses warnings globally via urllib3, not per-request
-- MCP bridge requires `pip install "mcp>=1.0.0"` — gracefully exits with an error message if not installed
+- MCP bridge requires `pip install "mcp>=1.0.0,<2"` — gracefully exits with an error message if not installed
 
 ## Daemon Mode
 

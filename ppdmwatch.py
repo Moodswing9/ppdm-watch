@@ -36,11 +36,15 @@ try:
 except ImportError:
     _ANTHROPIC_AVAILABLE = False
 
+# The MCP bridge is written against mcp 1.x: mcp 2.x renamed FastMCP to
+# MCPServer (mcp.server.mcpserver), so requirements pin mcp<2.
 try:
     from mcp.server.fastmcp import FastMCP as _FastMCP
     _MCP_AVAILABLE = True
-except ImportError:
+    _MCP_IMPORT_ERROR: Optional[str] = None
+except ImportError as _e:
     _MCP_AVAILABLE = False
+    _MCP_IMPORT_ERROR = str(_e)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -791,8 +795,10 @@ class MCPBridge:
 
     def run(self) -> None:
         if not _MCP_AVAILABLE:
+            # Say why: mcp may be missing, or be 2.x, where FastMCP was renamed.
             print(
-                "Error: 'mcp' package not installed. Run: pip install 'mcp>=1.0.0'",
+                f"Error: MCP bridge unavailable ({_MCP_IMPORT_ERROR}). "
+                "Run: pip install 'mcp>=1.0.0,<2'",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -975,7 +981,7 @@ Examples:
     p.add_argument("--export", nargs="?", const="-", metavar="FILE",
                    help="One-shot JSON snapshot: dump to FILE (or stdout when omitted) and exit")
     p.add_argument("--mcp", action="store_true",
-                   help="Run as MCP stdio server — exposes live dashboard data as Claude Code tools (requires: pip install 'mcp>=1.0.0')")
+                   help="Run as MCP stdio server — exposes live dashboard data as Claude Code tools (requires: pip install 'mcp>=1.0.0,<2')")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 

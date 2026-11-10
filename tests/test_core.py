@@ -467,3 +467,17 @@ def test_summarize_reads_json_after_a_thinking_block():
 def test_summarize_returns_none_on_refusal():
     result, _ = _summarize_with(_reply(stop_reason="refusal"))
     assert result is None
+# ── MCP bridge import (regression: mcp 2.x renamed FastMCP) ────────────────────
+
+def test_mcp_bridge_loads_with_the_installed_mcp():
+    """If mcp is installed, the bridge must import; otherwise --mcp fails at runtime.
+
+    The import sits in a try/except, so without this test an incompatible mcp
+    (2.x renamed FastMCP to MCPServer) would only switch the bridge off silently.
+    """
+    import importlib.util
+    import pytest
+    if importlib.util.find_spec("mcp") is None:
+        pytest.skip("mcp not installed")
+    import ppdmwatch
+    assert ppdmwatch._MCP_AVAILABLE, ppdmwatch._MCP_IMPORT_ERROR
