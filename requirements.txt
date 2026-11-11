@@ -1,4 +1,4 @@
 requests>=2.34.2
-urllib3>=2.0.0
+urllib3>=2.8.0
 anthropic>=2.7.0  # optional — enables AI alert summaries (--ai-key / ANTHROPIC_API_KEY)
 mcp>=1.0.0,<2      # optional (bridge is written for mcp 1.x) — enables --mcp bridge mode (Claude Code MCP tools)
