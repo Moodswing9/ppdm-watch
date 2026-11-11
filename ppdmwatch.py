@@ -6,7 +6,7 @@ Equivalent to nsrwatch for NetWorker.
 
 from __future__ import annotations
 
-__version__ = "2.1.1"
+__version__ = "2.2.0"
 __author__ = "Timur Poyraz"
 
 import argparse
@@ -36,11 +36,15 @@ try:
 except ImportError:
     _ANTHROPIC_AVAILABLE = False
 
+# The MCP bridge is written against mcp 1.x: mcp 2.x renamed FastMCP to
+# MCPServer (mcp.server.mcpserver), so requirements pin mcp<2.
 try:
     from mcp.server.fastmcp import FastMCP as _FastMCP
     _MCP_AVAILABLE = True
-except ImportError:
+    _MCP_IMPORT_ERROR: Optional[str] = None
+except ImportError as _e:
     _MCP_AVAILABLE = False
+    _MCP_IMPORT_ERROR = str(_e)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -255,23 +259,37 @@ def build_messages(critical_alerts: List[Dict], all_alerts: List[Dict]) -> List[
 
 # ─── AI Alert Summariser ──────────────────────────────────────────────────────
 
-_AI_SUMMARY_TOOL = {
-    "name": "ppdm_summary",
-    "description": "Structured one-line PPDM health summary",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "root_cause": {
-                "type": "string",
-                "description": "Most likely root cause in 10 words or fewer",
-            },
-            "action": {
-                "type": "string",
-                "description": "Single most important action to take, in 10 words or fewer",
-            },
+# Structured one-line PPDM health summary. Claude Opus 5.5 rejects a forced
+# tool_choice (400), so the JSON shape comes from structured outputs instead.
+_AI_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "root_cause": {
+            "type": "string",
+            "description": "Most likely root cause in 10 words or fewer",
         },
-        "required": ["root_cause", "action"],
+        "action": {
+            "type": "string",
+            "description": "Single most important action to take, in 10 words or fewer",
+        },
     },
+    "required": ["root_cause", "action"],
+    "additionalProperties": False,
+}
+
+# Opus 5.5 always thinks; low effort keeps this one-liner fast and cheap
+# (measured: $0.0031 per summary vs $0.0086 on Opus 4.7 with the forced tool).
+# Thinking shares max_tokens with the answer. On a refusal the API retries on a
+# fallback model.
+_AI_SUMMARY_REQUEST = {
+    "model": "claude-opus-5-5",
+    "max_tokens": 2000,
+    "output_config": {
+        "effort": "low",
+        "format": {"type": "json_schema", "schema": _AI_SUMMARY_SCHEMA},
+    },
+    "betas": ["server-side-fallback-2026-07-01"],
+    "fallbacks": "default",
 }
 
 
@@ -339,20 +357,21 @@ class AISummarizer:
                 )
                 system = "You are a Dell PPDM expert. Be concise — one sentence only."
 
-            msg = client.messages.create(
-                model="claude-opus-4-7",
-                max_tokens=256,
+            msg = client.beta.messages.create(
+                **_AI_SUMMARY_REQUEST,
                 system=system,
-                tools=[_AI_SUMMARY_TOOL],
-                tool_choice={"type": "tool", "name": "ppdm_summary"},
                 messages=[{"role": "user", "content": prompt}],
             )
             self._last_call = time.time()
-            tool_use = next((b for b in msg.content if b.type == "tool_use"), None)
-            if tool_use:
-                r = tool_use.input
-                return f"{r['root_cause']} → {r['action']}"
-            return msg.content[0].text.strip() if msg.content else None
+            if msg.stop_reason == "refusal":
+                logging.warning("AI summarizer: Claude declined to summarise this state")
+                return None
+            # Read text blocks by type: a response can start with a thinking block.
+            text = "".join(b.text for b in msg.content if b.type == "text").strip()
+            if not text:
+                return None
+            r = json.loads(text)
+            return f"{r['root_cause']} → {r['action']}"
         except Exception as e:
             logging.warning(f"AI summarizer error: {e}")
             return None
@@ -776,8 +795,10 @@ class MCPBridge:
 
     def run(self) -> None:
         if not _MCP_AVAILABLE:
+            # Say why: mcp may be missing, or be 2.x, where FastMCP was renamed.
             print(
-                "Error: 'mcp' package not installed. Run: pip install 'mcp>=1.0.0'",
+                f"Error: MCP bridge unavailable ({_MCP_IMPORT_ERROR}). "
+                "Run: pip install 'mcp>=1.0.0,<2'",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -960,7 +981,7 @@ Examples:
     p.add_argument("--export", nargs="?", const="-", metavar="FILE",
                    help="One-shot JSON snapshot: dump to FILE (or stdout when omitted) and exit")
     p.add_argument("--mcp", action="store_true",
-                   help="Run as MCP stdio server — exposes live dashboard data as Claude Code tools (requires: pip install 'mcp>=1.0.0')")
+                   help="Run as MCP stdio server — exposes live dashboard data as Claude Code tools (requires: pip install 'mcp>=1.0.0,<2')")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 

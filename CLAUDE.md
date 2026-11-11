@@ -17,7 +17,7 @@ Current version: **2.1.1** — adds `AnomalyBaseline` statistical anomaly detect
 # TUI mode
 python ppdmwatch.py --host ppdm01.example.com -u admin -p secret
 
-# TUI with AI summaries (Claude Opus 4.7)
+# TUI with AI summaries (Claude Opus 5.5)
 python ppdmwatch.py --host ppdm01.example.com -u admin -p secret --ai-key sk-ant-...
 
 # Daemon mode
@@ -32,8 +32,8 @@ python ppdmwatch.py --host ppdm01.example.com -u admin -p secret --no-ssl-verify
 
 # Install dependencies
 pip install -r requirements.txt          # requests, urllib3, anthropic, mcp
-pip install anthropic                    # optional — AI summaries (Claude Opus 4.7)
-pip install "mcp>=1.0.0"               # optional — MCP bridge mode
+pip install anthropic                    # optional — AI summaries (Claude Opus 5.5)
+pip install "mcp>=1.0.0,<2"               # optional — MCP bridge mode
 ```
 
 ## Architecture
@@ -47,7 +47,7 @@ Everything lives in `ppdmwatch.py`. Classes in order of appearance:
 | `JobSummary` | Dataclass — counts: total, running, success, failed, canceled, queued, ok_with_errors, unknown |
 | `DashboardState` | Shared mutable state passed between collector and renderer |
 | `AnomalyBaseline` | Statistical baseline — records metrics over 10 polls, then detects deviations > 2.5σ |
-| `AISummarizer` | Optional Claude Opus 4.7 integration — 5-min cooldown, fires when baseline flags anomaly |
+| `AISummarizer` | Optional Claude Opus 5.5 integration (structured outputs, low effort) — 5-min cooldown, fires when baseline flags anomaly |
 | `DataCollector` | Background thread — polls PPDM every N seconds, writes into `DashboardState` |
 | `Dashboard` | curses TUI renderer — 4 panels, color-coded, `q` to quit |
 | `HealthServer` | Minimal HTTP thread — `GET /health` JSON endpoint for liveness probes |
@@ -105,12 +105,12 @@ All tool outputs are JSON strings. The `last_update` field in each response show
 - `urllib3.disable_warnings()` is called at module level — expected, PPDM commonly uses self-signed certs
 - `DashboardState` uses a `threading.Lock` for all reads/writes — safe to access from `DataCollector` thread and MCPBridge tool calls concurrently
 - curses `color_pair` map: 1=white (normal), 2=green (success), 3=red (failed/critical), 4=yellow (warning), 5=cyan (running), 6=magenta (header/AI)
-- AI summaries use **Claude Opus 4.7** (upgraded from Haiku 4.5 in v2.0.0). Fire only after `AnomalyBaseline` is calibrated (10 polls) and `is_anomalous()` returns True — eliminates false positives during startup
+- AI summaries use **Claude Opus 5.5** at `low` effort with structured outputs (Opus since v2.0.0; Opus 5.5 since v2.2.0). Fire only after `AnomalyBaseline` is calibrated (10 polls) and `is_anomalous()` returns True — eliminates false positives during startup
 - `AnomalyBaseline` tracks `failed_jobs`, `storage_pct`, `alerts_critical`; anomaly = value > mean + 2.5 × stdev; zero-variance metrics are skipped
 - Calibration progress shows in the TUI as `[Calibrating baseline: N/10 polls]` → `[Baseline calibrated ✓]`
 - AI cooldown is 5 min (shared between anomaly triggers)
 - `--no-ssl-verify` suppresses warnings globally via urllib3, not per-request
-- MCP bridge requires `pip install "mcp>=1.0.0"` — gracefully exits with an error message if not installed
+- MCP bridge requires `pip install "mcp>=1.0.0,<2"` — gracefully exits with an error message if not installed
 
 ## Daemon Mode
 

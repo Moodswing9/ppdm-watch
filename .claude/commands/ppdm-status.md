@@ -70,7 +70,7 @@ If the output is `NO_LOG_FILES`, stop with the message from Step 1.
 
 ## Step 4 — Run the AI briefing
 
-Use the Bash tool to pipe the log content through Claude Haiku 4.5. Substitute the actual log content (from Step 3) and the health JSON (from Step 2, or `"unavailable"`) into the script:
+Use the Bash tool to pipe the log content through Claude Haiku 5.5. Substitute the actual log content (from Step 3) and the health JSON (from Step 2, or `"unavailable"`) into the script:
 
 ```bash
 python3 - << 'PYEOF'
@@ -113,15 +113,24 @@ health_note = f"\n\nLive /health endpoint response:\n{HEALTH_JSON}" if HEALTH_JS
 user_content = f"Recent ppdmwatch daemon log (most recent entries last):{health_note}\n\n```\n{log}\n```"
 
 client = anthropic.Anthropic()
+# Haiku 5.5 thinks by default; this report never did, so thinking stays off
+# (allowed at effort high or below). extra_body works with any installed
+# anthropic version (older ones lack these parameters).
 with client.messages.stream(
-    model='claude-haiku-4-5-20251001',
+    model='claude-haiku-5-5',
     max_tokens=600,
+    extra_body={'thinking': {'type': 'disabled'}, 'output_config': {'effort': 'medium'}},
     system=system,
     messages=[{'role': 'user', 'content': user_content}],
 ) as stream:
     for text in stream.text_stream:
         print(text, end='', flush=True)
+    final = stream.get_final_message()
 print()
+if final.stop_reason == 'refusal':
+    print('Claude declined to summarise this log.')
+elif final.stop_reason == 'max_tokens':
+    print('Note: the report was cut off at the length limit.')
 PYEOF
 ```
 
